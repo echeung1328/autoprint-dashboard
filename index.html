@@ -36,6 +36,14 @@
   .divider::after { right: 0; }
   .error-msg { background: #fef2f2; color: #ef4444; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
   .success-msg { background: #f0fdf4; color: #10b981; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
+  .info-msg { background: #eff6ff; color: #002FA7; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
+
+  /* Pending approval page */
+  #pendingPage { display: none; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #002FA7 0%, #00C3FF 100%); }
+  .pending-card { background: white; border-radius: 16px; padding: 48px 40px; width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); text-align: center; }
+  .pending-card .icon { font-size: 48px; margin-bottom: 16px; }
+  .pending-card h2 { color: #002FA7; margin-bottom: 12px; }
+  .pending-card p { color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
 
   /* Dashboard */
   #dashboardPage { display: none; }
@@ -69,6 +77,7 @@
     <p class="subtitle">自动打印执行报告仪表盘</p>
     <div class="error-msg" id="loginError"></div>
     <div class="success-msg" id="loginSuccess"></div>
+    <div class="info-msg" id="loginInfo"></div>
     <form id="loginForm">
       <label>邮箱地址</label>
       <input type="email" id="loginEmail" placeholder="you@company.com" required>
@@ -79,7 +88,17 @@
     <div class="divider">或</div>
     <button class="btn-secondary" id="magicLinkBtn">发送魔法链接登录（免密码）</button>
     <div class="divider">没有账号？</div>
-    <button class="btn-secondary" id="signupBtn">注册新账号</button>
+    <button class="btn-secondary" id="signupBtn">申请注册账号</button>
+  </div>
+</div>
+
+<!-- Pending Approval Page -->
+<div id="pendingPage">
+  <div class="pending-card">
+    <div class="icon">⏳</div>
+    <h2>等待管理员批准</h2>
+    <p>您的注册申请已提交，正在等待管理员审批。<br>审批通过后即可登录使用。<br><br>如有疑问，请联系系统管理员。</p>
+    <button class="btn-secondary" onclick="logout()">返回登录页</button>
   </div>
 </div>
 
@@ -92,14 +111,12 @@
     </div>
     <div class="header-right">
       <span class="user-email" id="userEmail"></span>
-      <button class="btn-logout" id="logoutBtn">退出登录</button>
+      <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
   </div>
-
   <div class="kpi-row" id="kpiRow">
     <div class="loading">正在加载数据...</div>
   </div>
-
   <div class="charts" id="chartsSection" style="display:none;">
     <div class="chart-box full-width">
       <h3>📈 每日打印量趋势（总数 / 成功 / 失败）</h3>
@@ -124,59 +141,86 @@
 const SUPABASE_URL = 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2cWp0dm9ueHdzbWhudG55ZXN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzE5ODMsImV4cCI6MjA5NzQ0Nzk4M30.mBlPq2xNuHROdT39FQ6cw9t8U6IqrjyWl8IqbRo8QOE';
 
-// Init Supabase client
 const supabase = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
-// DOM elements
-const loginPage = document.getElementById('loginPage');
-const dashboardPage = document.getElementById('dashboardPage');
-const loginForm = document.getElementById('loginForm');
-const loginError = document.getElementById('loginError');
-const loginSuccess = document.getElementById('loginSuccess');
-const magicLinkBtn = document.getElementById('magicLinkBtn');
-const signupBtn = document.getElementById('signupBtn');
-const logoutBtn = document.getElementById('logoutBtn');
+// ===================== AUTH STATE =====================
 
-function showError(msg) {
-  loginError.textContent = msg;
-  loginError.style.display = 'block';
-  loginSuccess.style.display = 'none';
-}
-
-function showSuccess(msg) {
-  loginSuccess.textContent = msg;
-  loginSuccess.style.display = 'block';
-  loginError.style.display = 'none';
-}
-
-function hideMessages() {
-  loginError.style.display = 'none';
-  loginSuccess.style.display = 'none';
-}
-
-// Check auth state on load
 supabase.auth.getSession().then(({ data: { session } }) => {
-  if (session) showDashboard(session.user);
+  if (session) checkApproval(session.user);
+  else showLogin();
 });
 
-// Listen for auth changes
 supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_IN' && session) showDashboard(session.user);
+  if (event === 'SIGNED_IN' && session) checkApproval(session.user);
   if (event === 'SIGNED_OUT') showLogin();
 });
 
-// Email + Password login
-loginForm.addEventListener('submit', async (e) => {
+async function checkApproval(user) {
+  // Check if user is approved
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('approved')
+    .eq('id', user.id)
+    .single();
+  
+  if (error || !data) {
+    // Profile not found - might be first time, wait a moment for trigger
+    await new Promise(r => setTimeout(r, 1500));
+    const { data: retry, error: err2 } = await supabase
+      .from('profiles')
+      .select('approved')
+      .eq('id', user.id)
+      .single();
+    if (err2 || !retry) {
+      showPending(user.email);
+      return;
+    }
+    if (!retry.approved) { showPending(user.email); return; }
+  }
+  
+  if (!data.approved) { showPending(user.email); return; }
+  
+  // Approved - show dashboard
+  showDashboard(user);
+}
+
+function showLogin() {
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'none';
+}
+
+function showPending(email) {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'flex';
+  document.getElementById('dashboardPage').style.display = 'none';
+}
+
+function showDashboard(user) {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'block';
+  document.getElementById('userEmail').textContent = user.email || '';
+  loadData();
+}
+
+async function logout() {
+  await supabase.auth.signOut();
+}
+
+// ===================== LOGIN FORM =====================
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   hideMessages();
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { error } = await supabase.auth.signInWithPassword({
+    email: document.getElementById('loginEmail').value,
+    password: document.getElementById('loginPassword').value,
+  });
   if (error) showError(error.message);
 });
 
-// Magic link login
-magicLinkBtn.addEventListener('click', async () => {
+document.getElementById('magicLinkBtn').addEventListener('click', async () => {
   hideMessages();
   const email = document.getElementById('loginEmail').value;
   if (!email) { showError('请输入邮箱地址'); return; }
@@ -188,36 +232,50 @@ magicLinkBtn.addEventListener('click', async () => {
   else showSuccess('✉️ 魔法链接已发送到你的邮箱，请查收并点击链接登录');
 });
 
-// Sign up
-signupBtn.addEventListener('click', async () => {
+document.getElementById('signupBtn').addEventListener('click', async () => {
   hideMessages();
   const email = document.getElementById('loginEmail').value;
   const password = document.getElementById('loginPassword').value;
   if (!email || !password) { showError('请输入邮箱和密码'); return; }
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: { emailRedirectTo: window.location.origin }
   });
   if (error) showError(error.message);
-  else showSuccess('✉️ 注册成功！请查收确认邮件（或直接使用魔法链接登录）');
+  else {
+    // Sign up successful - check if auto-confirmed
+    if (data.session) {
+      showInfo('✅ 注册成功！正在检查审批状态...');
+      setTimeout(() => checkApproval(data.user), 2000);
+    } else {
+      showSuccess('✅ 注册申请已提交！等待管理员审批后即可登录。');
+    }
+  }
 });
 
-// Logout
-logoutBtn.addEventListener('click', async () => {
-  await supabase.auth.signOut();
-});
-
-function showLogin() {
-  loginPage.style.display = 'flex';
-  dashboardPage.style.display = 'none';
+function showError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('loginSuccess').style.display = 'none';
+  document.getElementById('loginInfo').style.display = 'none';
 }
-
-function showDashboard(user) {
-  loginPage.style.display = 'none';
-  dashboardPage.style.display = 'block';
-  document.getElementById('userEmail').textContent = user.email || '';
-  loadData();
+function showSuccess(msg) {
+  const el = document.getElementById('loginSuccess');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('loginError').style.display = 'none';
+  document.getElementById('loginInfo').style.display = 'none';
+}
+function showInfo(msg) {
+  const el = document.getElementById('loginInfo');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('loginError').style.display = 'none';
+  document.getElementById('loginSuccess').style.display = 'none';
+}
+function hideMessages() {
+  document.getElementById('loginError').style.display = 'none';
+  document.getElementById('loginSuccess').style.display = 'none';
+  document.getElementById('loginInfo').style.display = 'none';
 }
 
 // ===================== DATA LOADING =====================
@@ -227,6 +285,7 @@ async function loadData() {
     .from('ReportAutoPrint')
     .select('*')
     .order('执行时间', { ascending: true });
+  
   if (error) {
     document.getElementById('kpiRow').innerHTML = '';
     alert('数据加载失败：' + error.message);
@@ -283,10 +342,9 @@ function render(records) {
 
 function renderCharts(grouped) {
   const dates = Object.keys(grouped).sort();
-  const dailyTotal = dates.map(d => grouped[d].total);
-  const dailySuccess = dates.map(d => grouped[d].success);
   const dailyFailed = dates.map(d => grouped[d].fail);
   const dailySkip = dates.map(d => grouped[d].skip);
+  const dailySuccess = dates.map(d => grouped[d].success);
   const successRate = dates.map(d => grouped[d].total > 0 ? +((grouped[d].success / grouped[d].total) * 100).toFixed(1) : 0);
   const dailyDuration = dates.map(d => grouped[d].durationCount > 0 ? +(grouped[d].durationSum / grouped[d].durationCount).toFixed(1) : 0);
 
