@@ -4,13 +4,41 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AutoPrint 执行报告仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing: border-box; }
-  body { font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif; background: #f0f4f8; color: #333; }
-  .header { background: linear-gradient(135deg, #002FA7, #00C3FF); color: white; padding: 24px 32px; }
+  body { font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif; background: #f0f4f8; color: #333; min-height: 100vh; }
+  .header { background: linear-gradient(135deg, #002FA7, #00C3FF); color: white; padding: 24px 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
   .header h1 { font-size: 24px; font-weight: 600; }
   .header p { font-size: 14px; opacity: 0.85; margin-top: 4px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .user-email { font-size: 13px; opacity: 0.9; }
+  .btn-logout { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .btn-logout:hover { background: rgba(255,255,255,0.35); }
+
+  /* Login Page */
+  #loginPage { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #002FA7 0%, #00C3FF 100%); }
+  .login-card { background: white; border-radius: 16px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+  .login-card h2 { text-align: center; color: #002FA7; margin-bottom: 8px; font-size: 22px; }
+  .login-card .subtitle { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 28px; }
+  .login-card label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 6px; }
+  .login-card input[type="email"],
+  .login-card input[type="password"] { width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; margin-bottom: 16px; outline: none; transition: border-color 0.2s; }
+  .login-card input:focus { border-color: #002FA7; box-shadow: 0 0 0 3px rgba(0,47,167,0.1); }
+  .btn-primary { width: 100%; padding: 12px; background: linear-gradient(135deg, #002FA7, #00C3FF); color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; transition: opacity 0.2s; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary { width: 100%; padding: 12px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; transition: background 0.2s; }
+  .btn-secondary:hover { background: #f0f4ff; }
+  .divider { text-align: center; color: #94a3b8; font-size: 12px; margin: 16px 0; position: relative; }
+  .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #e2e8f0; }
+  .divider::before { left: 0; }
+  .divider::after { right: 0; }
+  .error-msg { background: #fef2f2; color: #ef4444; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
+  .success-msg { background: #f0fdf4; color: #10b981; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
+
+  /* Dashboard */
+  #dashboardPage { display: none; }
   .kpi-row { display: flex; gap: 16px; padding: 20px 32px; flex-wrap: wrap; }
   .kpi-card { flex: 1; min-width: 180px; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .kpi-label { font-size: 13px; color: #666; margin-bottom: 8px; }
@@ -28,55 +56,187 @@
   .fail-table th, .fail-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
   .fail-table th { background: #f8fafc; font-weight: 600; color: #475569; }
   .badge-fail { background: #fef2f2; color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-  .badge-ok { background: #f0fdf4; color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
   .loading { text-align: center; padding: 60px; color: #666; }
-  .error { text-align: center; padding: 60px; color: #ef4444; }
-  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } .header { flex-direction: column; align-items: flex-start; gap: 10px; } }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>🖨️ AutoPrint 自动打印执行报告</h1>
-  <p id="reportPeriod">加载中...</p>
-</div>
-
-<div class="kpi-row" id="kpiRow">
-  <div class="loading">正在加载数据...</div>
-</div>
-
-<div class="charts" id="chartsSection" style="display:none;">
-  <div class="chart-box full-width">
-    <h3>📈 每日打印量趋势（总数 / 成功 / 失败）</h3>
-    <canvas id="chartTrend"></canvas>
-  </div>
-  <div class="chart-box">
-    <h3>📊 每日成功率（%）</h3>
-    <canvas id="chartSuccessRate"></canvas>
-  </div>
-  <div class="chart-box">
-    <h3>⏱️ 平均执行耗时（分钟）</h3>
-    <canvas id="chartDuration"></canvas>
-  </div>
-  <div class="chart-box full-width">
-    <h3>❌ 失败记录明细</h3>
-    <div id="failTableContainer"></div>
+<!-- Login Page -->
+<div id="loginPage">
+  <div class="login-card">
+    <h2>🖨️ AutoPrint 看板</h2>
+    <p class="subtitle">自动打印执行报告仪表盘</p>
+    <div class="error-msg" id="loginError"></div>
+    <div class="success-msg" id="loginSuccess"></div>
+    <form id="loginForm">
+      <label>邮箱地址</label>
+      <input type="email" id="loginEmail" placeholder="you@company.com" required>
+      <label>密码</label>
+      <input type="password" id="loginPassword" placeholder="请输入密码" required>
+      <button type="submit" class="btn-primary">登录</button>
+    </form>
+    <div class="divider">或</div>
+    <button class="btn-secondary" id="magicLinkBtn">发送魔法链接登录（免密码）</button>
+    <div class="divider">没有账号？</div>
+    <button class="btn-secondary" id="signupBtn">注册新账号</button>
   </div>
 </div>
 
-<div class="error" id="errorSection" style="display:none;"></div>
+<!-- Dashboard Page -->
+<div id="dashboardPage">
+  <div class="header">
+    <div>
+      <h1>🖨️ AutoPrint 自动打印执行报告</h1>
+      <p id="reportPeriod">加载中...</p>
+    </div>
+    <div class="header-right">
+      <span class="user-email" id="userEmail"></span>
+      <button class="btn-logout" id="logoutBtn">退出登录</button>
+    </div>
+  </div>
+
+  <div class="kpi-row" id="kpiRow">
+    <div class="loading">正在加载数据...</div>
+  </div>
+
+  <div class="charts" id="chartsSection" style="display:none;">
+    <div class="chart-box full-width">
+      <h3>📈 每日打印量趋势（总数 / 成功 / 失败）</h3>
+      <canvas id="chartTrend"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>📊 每日成功率（%）</h3>
+      <canvas id="chartSuccessRate"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>⏱️ 平均执行耗时（分钟）</h3>
+      <canvas id="chartDuration"></canvas>
+    </div>
+    <div class="chart-box full-width">
+      <h3>❌ 失败记录明细</h3>
+      <div id="failTableContainer"></div>
+    </div>
+  </div>
+</div>
 
 <script>
 const SUPABASE_URL = 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2cWp0dm9ueHdzbWhudG55ZXN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzE5ODMsImV4cCI6MjA5NzQ0Nzk4M30.mBlPq2xNuHROdT39FQ6cw9t8U6IqrjyWl8IqbRo8QOE';
 
-async function fetchData() {
-  const resp = await fetch(
-    `${SUPABASE_URL}/rest/v1/ReportAutoPrint?select=*&order=执行时间.asc`,
-    { headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` } }
-  );
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return resp.json();
+// Init Supabase client
+const supabase = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+// DOM elements
+const loginPage = document.getElementById('loginPage');
+const dashboardPage = document.getElementById('dashboardPage');
+const loginForm = document.getElementById('loginForm');
+const loginError = document.getElementById('loginError');
+const loginSuccess = document.getElementById('loginSuccess');
+const magicLinkBtn = document.getElementById('magicLinkBtn');
+const signupBtn = document.getElementById('signupBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+
+function showError(msg) {
+  loginError.textContent = msg;
+  loginError.style.display = 'block';
+  loginSuccess.style.display = 'none';
+}
+
+function showSuccess(msg) {
+  loginSuccess.textContent = msg;
+  loginSuccess.style.display = 'block';
+  loginError.style.display = 'none';
+}
+
+function hideMessages() {
+  loginError.style.display = 'none';
+  loginSuccess.style.display = 'none';
+}
+
+// Check auth state on load
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session) showDashboard(session.user);
+});
+
+// Listen for auth changes
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' && session) showDashboard(session.user);
+  if (event === 'SIGNED_OUT') showLogin();
+});
+
+// Email + Password login
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideMessages();
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) showError(error.message);
+});
+
+// Magic link login
+magicLinkBtn.addEventListener('click', async () => {
+  hideMessages();
+  const email = document.getElementById('loginEmail').value;
+  if (!email) { showError('请输入邮箱地址'); return; }
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin }
+  });
+  if (error) showError(error.message);
+  else showSuccess('✉️ 魔法链接已发送到你的邮箱，请查收并点击链接登录');
+});
+
+// Sign up
+signupBtn.addEventListener('click', async () => {
+  hideMessages();
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) { showError('请输入邮箱和密码'); return; }
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin }
+  });
+  if (error) showError(error.message);
+  else showSuccess('✉️ 注册成功！请查收确认邮件（或直接使用魔法链接登录）');
+});
+
+// Logout
+logoutBtn.addEventListener('click', async () => {
+  await supabase.auth.signOut();
+});
+
+function showLogin() {
+  loginPage.style.display = 'flex';
+  dashboardPage.style.display = 'none';
+}
+
+function showDashboard(user) {
+  loginPage.style.display = 'none';
+  dashboardPage.style.display = 'block';
+  document.getElementById('userEmail').textContent = user.email || '';
+  loadData();
+}
+
+// ===================== DATA LOADING =====================
+
+async function loadData() {
+  const { data, error } = await supabase
+    .from('ReportAutoPrint')
+    .select('*')
+    .order('执行时间', { ascending: true });
+  if (error) {
+    document.getElementById('kpiRow').innerHTML = '';
+    alert('数据加载失败：' + error.message);
+    return;
+  }
+  if (!data || !data.length) {
+    document.getElementById('kpiRow').innerHTML = '<div style="padding:40px;color:#666;">暂无数据</div>';
+    return;
+  }
+  render(data);
 }
 
 function groupByDate(records) {
@@ -89,63 +249,40 @@ function groupByDate(records) {
     map[date].success += r['成功'] || 0;
     map[date].fail += r['失败'] || 0;
     map[date].skip += r['跳过'] || 0;
-    if (r['耗时分钟'] != null) {
-      map[date].durationSum += r['耗时分钟'];
-      map[date].durationCount += 1;
-    }
-    if (r['失败'] > 0) {
-      map[date].failures.push({
-        time: r['执行时间'],
-        title: r['Title'] || '',
-        total: r['总数'],
-        fail: r['失败']
-      });
-    }
+    if (r['耗时分钟'] != null) { map[date].durationSum += r['耗时分钟']; map[date].durationCount += 1; }
+    if (r['失败'] > 0) map[date].failures.push({ time: r['执行时间'], title: r['Title'] || '', total: r['总数'], fail: r['失败'] });
   });
   return map;
 }
 
-function renderKPI(records, grouped) {
+function render(records) {
+  const grouped = groupByDate(records);
   const dates = Object.keys(grouped).sort();
   const totalPrint = records.reduce((s, r) => s + (r['总数'] || 0), 0);
   const totalSuccess = records.reduce((s, r) => s + (r['成功'] || 0), 0);
   const totalFail = records.reduce((s, r) => s + (r['失败'] || 0), 0);
   const successRate = totalPrint > 0 ? ((totalSuccess / totalPrint) * 100).toFixed(1) : '0.0';
-  
   let totalDuration = 0, durationCount = 0;
   records.forEach(r => { if (r['耗时分钟'] != null) { totalDuration += r['耗时分钟']; durationCount++; } });
   const avgDuration = durationCount > 0 ? (totalDuration / durationCount).toFixed(1) : '0.0';
 
-  document.getElementById('reportPeriod').textContent = 
+  document.getElementById('reportPeriod').textContent =
     `报告周期：${dates[0] || '--'} - ${dates[dates.length - 1] || '--'} | 共 ${records.length} 条执行记录`;
 
   document.getElementById('kpiRow').innerHTML = `
-    <div class="kpi-card">
-      <div class="kpi-label">📦 总打印量</div>
-      <div class="kpi-value color-total">${totalPrint}</div>
-      <div class="kpi-sub">全周期累计执行总数</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">✅ 成功数量</div>
-      <div class="kpi-value color-success">${totalSuccess}</div>
-      <div class="kpi-sub">成功率 ${successRate}%</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">❌ 失败数量</div>
-      <div class="kpi-value color-fail">${totalFail}</div>
-      <div class="kpi-sub">失败率 ${totalPrint > 0 ? ((totalFail / totalPrint) * 100).toFixed(1) : 0}%</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">⏱️ 平均耗时</div>
-      <div class="kpi-value color-duration">${avgDuration}</div>
-      <div class="kpi-sub">分钟/每次执行</div>
-    </div>
+    <div class="kpi-card"><div class="kpi-label">📦 总打印量</div><div class="kpi-value color-total">${totalPrint}</div><div class="kpi-sub">全周期累计执行总数</div></div>
+    <div class="kpi-card"><div class="kpi-label">✅ 成功数量</div><div class="kpi-value color-success">${totalSuccess}</div><div class="kpi-sub">成功率 ${successRate}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">❌ 失败数量</div><div class="kpi-value color-fail">${totalFail}</div><div class="kpi-sub">失败率 ${totalPrint > 0 ? ((totalFail / totalPrint) * 100).toFixed(1) : 0}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">⏱️ 平均耗时</div><div class="kpi-value color-duration">${avgDuration}</div><div class="kpi-sub">分钟/每次执行</div></div>
   `;
+
+  document.getElementById('chartsSection').style.display = 'grid';
+  renderCharts(grouped);
+  renderFailTable(grouped);
 }
 
 function renderCharts(grouped) {
   const dates = Object.keys(grouped).sort();
-  const labels = dates;
   const dailyTotal = dates.map(d => grouped[d].total);
   const dailySuccess = dates.map(d => grouped[d].success);
   const dailyFailed = dates.map(d => grouped[d].fail);
@@ -154,57 +291,20 @@ function renderCharts(grouped) {
   const dailyDuration = dates.map(d => grouped[d].durationCount > 0 ? +(grouped[d].durationSum / grouped[d].durationCount).toFixed(1) : 0);
 
   new Chart(document.getElementById('chartTrend'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: '失败', data: dailyFailed, backgroundColor: '#ef4444', stack: 'stack1' },
-        { label: '跳过', data: dailySkip, backgroundColor: '#f59e0b', stack: 'stack1' },
-        { label: '成功', data: dailySuccess, backgroundColor: '#10b981', stack: 'stack1' }
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'top' } },
-      scales: { x: { ticks: { maxRotation: 45 } }, y: { beginAtZero: true, title: { display: true, text: '打印数量' } } }
-    }
+    type: 'bar', data: { labels: dates, datasets: [
+      { label: '失败', data: dailyFailed, backgroundColor: '#ef4444', stack: 'stack1' },
+      { label: '跳过', data: dailySkip, backgroundColor: '#f59e0b', stack: 'stack1' },
+      { label: '成功', data: dailySuccess, backgroundColor: '#10b981', stack: 'stack1' }
+    ]},
+    options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { ticks: { maxRotation: 45 } }, y: { beginAtZero: true } } }
   });
-
   new Chart(document.getElementById('chartSuccessRate'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: '成功率 (%)',
-        data: successRate,
-        borderColor: '#002FA7',
-        backgroundColor: 'rgba(0,47,167,0.1)',
-        fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#002FA7'
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { min: 0, max: 100, title: { display: true, text: '成功率 (%)' } } }
-    }
+    type: 'line', data: { labels: dates, datasets: [{ label: '成功率 (%)', data: successRate, borderColor: '#002FA7', backgroundColor: 'rgba(0,47,167,0.1)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#002FA7' }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }
   });
-
   new Chart(document.getElementById('chartDuration'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: '平均耗时 (分钟)',
-        data: dailyDuration,
-        backgroundColor: '#00C3FF',
-        borderRadius: 4
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, title: { display: true, text: '分钟' } } }
-    }
+    type: 'bar', data: { labels: dates, datasets: [{ label: '平均耗时', data: dailyDuration, backgroundColor: '#00C3FF', borderRadius: 4 }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 }
 
@@ -213,40 +313,12 @@ function renderFailTable(grouped) {
   let rows = '';
   dates.forEach(date => {
     grouped[date].failures.forEach(f => {
-      rows += `<tr>
-        <td>${new Date(f.time).toLocaleString('zh-CN')}</td>
-        <td>${f.title}</td>
-        <td>${f.total}</td>
-        <td><span class="badge-fail">${f.fail}</span></td>
-        <td>失败</td>
-      </tr>`;
+      rows += `<tr><td>${new Date(f.time).toLocaleString('zh-CN')}</td><td>${f.title}</td><td>${f.total}</td><td><span class="badge-fail">${f.fail}</span></td><td>失败</td></tr>`;
     });
   });
   if (!rows) rows = '<tr><td colspan="5" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
-  document.getElementById('failTableContainer').innerHTML = `<table class="fail-table">
-    <tr><th>执行时间</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>
-    ${rows}</table>`;
+  document.getElementById('failTableContainer').innerHTML = `<table class="fail-table"><tr><th>执行时间</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>${rows}</table>`;
 }
-
-async function main() {
-  try {
-    const records = await fetchData();
-    if (!records.length) throw new Error('Supabase 中暂无数据');
-    const grouped = groupByDate(records);
-    document.getElementById('chartsSection').style.display = 'grid';
-    renderKPI(records, grouped);
-    renderCharts(grouped);
-    renderFailTable(grouped);
-  } catch (err) {
-    document.getElementById('kpiRow').innerHTML = '';
-    document.getElementById('errorSection').style.display = 'block';
-    document.getElementById('errorSection').innerHTML = 
-      `❌ 数据加载失败：<br>${err.message}<br><small>请检查 Supabase 连接或 RLS 策略配置</small>`;
-    console.error(err);
-  }
-}
-
-main();
 </script>
 </body>
 </html>
