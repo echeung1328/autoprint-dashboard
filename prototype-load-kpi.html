@@ -24,12 +24,12 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #002FA7 0%, #00C3FF 100%);
             color: white;
             padding: 30px;
             border-radius: 12px;
             margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 6px rgba(0,47,167,0.2);
         }
 
         .header h1 {
@@ -78,14 +78,14 @@
         }
 
         .time-switcher button.active {
-            background: #667eea;
+            background: #002FA7;
             color: white;
-            border-color: #667eea;
+            border-color: #002FA7;
         }
 
         .time-switcher button:hover:not(.active) {
-            border-color: #667eea;
-            color: #667eea;
+            border-color: #002FA7;
+            color: #002FA7;
         }
 
         /* KPI 卡片网格 */
@@ -128,11 +128,11 @@
         }
 
         .kpi-card.peak {
-            border-left: 4px solid #ff6b6b;
+            border-left: 4px solid #00C3FF;
         }
 
         .kpi-card.peak .value {
-            color: #ff6b6b;
+            color: #002FA7;
         }
 
         /* 年度高峰卡片 */
@@ -144,11 +144,11 @@
         }
 
         .peak-card {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            background: linear-gradient(135deg, #002FA7 0%, #00C3FF 100%);
             color: white;
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(255,107,107,0.2);
+            box-shadow: 0 4px 6px rgba(0,47,167,0.2);
         }
 
         .peak-card h3 {
@@ -179,55 +179,15 @@
 
         .chart-container h2 {
             font-size: 18px;
-            color: #333;
+            color: #002FA7;
             margin-bottom: 20px;
             padding-bottom: 12px;
-            border-bottom: 2px solid #f0f0f0;
+            border-bottom: 2px solid #e8f4fd;
         }
 
         .chart-wrapper {
             position: relative;
             height: 400px;
-        }
-
-        /* Q&A 区域 */
-        .qa-section {
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            margin-top: 30px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        .qa-section h2 {
-            font-size: 20px;
-            color: #333;
-            margin-bottom: 20px;
-        }
-
-        .qa-item {
-            padding: 16px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            margin-bottom: 12px;
-        }
-
-        .qa-question {
-            font-weight: 600;
-            color: #667eea;
-            margin-bottom: 8px;
-        }
-
-        .qa-answer {
-            color: #333;
-            line-height: 1.6;
-        }
-
-        .highlight {
-            background: #fff3cd;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-weight: 600;
         }
 
         /* 注解 */
@@ -323,36 +283,7 @@
             </div>
         </div>
 
-        <!-- Q&A 区域 -->
-        <div class="qa-section">
-            <h2>❓ 业务问题解答</h2>
-            
-            <div class="qa-item">
-                <div class="qa-question">Q1: 当前自然年内，哪天、哪周、哪月的打印数量最多？数量是多少？</div>
-                <div class="qa-answer">
-                    ✅ <strong>回答：</strong><br>
-                    • 最多的一天：<span class="highlight">2026-03-15</span>，打印 <span class="highlight">156次</span><br>
-                    • 最多的一周：<span class="highlight">2026第11周 (3月10-16日)</span>，打印 <span class="highlight">892次</span><br>
-                    • 最多的一月：<span class="highlight">2026年3月</span>，打印 <span class="highlight">3,245次</span><br>
-                    <br>
-                    💡 <strong>洞察：</strong>3月中旬是打印高峰，可能与季度末报告需求相关。
-                </div>
-            </div>
-
-            <div class="qa-item">
-                <div class="qa-question">Q2: 年度总打印数量趋势？</div>
-                <div class="qa-answer">
-                    ✅ <strong>回答：</strong><br>
-                    • 年度总打印量：<span class="highlight">32,450次</span><br>
-                    • 月均打印量：<span class="highlight">2,704次/月</span><br>
-                    • 趋势：<span class="highlight">Q1迅速上升，Q2平稳，Q3-Q4略有下降</span><br>
-                    <br>
-                    💡 <strong>洞察：</strong>打印量在3月和9月出现双峰，可能与季度初业务启动相关。
-                </div>
-            </div>
-        </div>
-
-        <div class="annotation" style="margin-top: 30px;">
+        <!-- 开发备注 -->
             <strong>📝 开发备注：</strong>
             <ul style="margin-top: 10px; margin-left: 20px; line-height: 1.8;">
                 <li><strong>数据聚合：</strong>使用Supabase的<code>DATE_TRUNC('day', created_at)</code>、<code>EXTRACT(WEEK FROM created_at)</code>等函数</li>
@@ -426,13 +357,14 @@
                 datasets: [{
                     label: '打印量',
                     data: initialData.values,
-                    borderColor: 'rgb(102, 126, 234)',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderColor: '#002FA7',
+                    backgroundColor: 'rgba(0,47,167,0.1)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
                     pointRadius: 3,
-                    pointHoverRadius: 6
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#00C3FF'
                 }]
             },
             options: {
@@ -474,8 +406,8 @@
                 datasets: [{
                     label: '2026年月度打印量',
                     data: [2450, 2380, 3245, 2890, 2760, 2847, 0, 0, 0, 0, 0, 0], // 7月后无数据
-                    backgroundColor: 'rgba(102, 126, 234, 0.6)',
-                    borderColor: 'rgb(102, 126, 234)',
+                    backgroundColor: 'rgba(0,47,167,0.6)',
+                    borderColor: '#002FA7',
                     borderWidth: 1
                 }]
             },
