@@ -16,6 +16,8 @@
   .user-email { font-size: 13px; opacity: 0.9; }
   .btn-logout { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
   .btn-logout:hover { background: rgba(255,255,255,0.35); }
+  .btn-manage { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .btn-manage:hover { background: rgba(255,255,255,0.35); }
 
   /* Login Page */
   #loginPage { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #002FA7 0%, #00C3FF 100%); }
@@ -47,6 +49,13 @@
 
   /* Dashboard */
   #dashboardPage { display: none; }
+  .filter-row { display: flex; gap: 12px; padding: 16px 32px; align-items: center; flex-wrap: wrap; background: white; margin: 0 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .filter-row label { font-size: 13px; font-weight: 600; color: #475569; }
+  .filter-row input[type="date"] { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+  .btn-filter { padding: 8px 16px; background: #002FA7; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-filter:hover { background: #001f8a; }
+  .btn-reset { padding: 8px 16px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-reset:hover { background: #f0f4ff; }
   .kpi-row { display: flex; gap: 16px; padding: 20px 32px; flex-wrap: wrap; }
   .kpi-card { flex: 1; min-width: 180px; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .kpi-label { font-size: 13px; color: #666; margin-bottom: 8px; }
@@ -64,8 +73,27 @@
   .fail-table th, .fail-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
   .fail-table th { background: #f8fafc; font-weight: 600; color: #475569; }
   .badge-fail { background: #fef2f2; color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  .badge-ok { background: #f0fdf4; color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
   .loading { text-align: center; padding: 60px; color: #666; }
-  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } .header { flex-direction: column; align-items: flex-start; gap: 10px; } }
+  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } .header { flex-direction: column; align-items: flex-start; gap: 10px; } .filter-row { margin: 0 16px; } }
+
+  /* User Management Page */
+  #userManagePage { display: none; padding: 32px; }
+  .user-table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
+  .user-table th, .user-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+  .user-table th { background: #f8fafc; font-weight: 600; color: #475569; }
+  .btn-approve { padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .btn-approve:hover { background: #059669; }
+  .btn-reject { padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: 8px; }
+  .btn-reject:hover { background: #dc2626; }
+  .btn-back { padding: 8px 16px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
+  .btn-back:hover { background: #f0f4ff; }
+  .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .status-pending { background: #fef3c7; color: #d97706; }
+  .status-approved { background: #d1fae5; color: #059669; }
+  .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; z-index: 1000; display: none; }
+  .toast-success { background: #d1fae5; color: #059669; border: 1px solid #10b981; }
+  .toast-error { background: #fee2e2; color: #dc2626; border: 1px solid #ef4444; }
 </style>
 </head>
 <body>
@@ -110,10 +138,22 @@
       <p id="reportPeriod">加载中...</p>
     </div>
     <div class="header-right">
+      <button class="btn-manage" id="btnManage" style="display:none;" onclick="showUserManage()">👥 用户管理</button>
       <span class="user-email" id="userEmail"></span>
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
   </div>
+  
+  <!-- Date Filter -->
+  <div class="filter-row">
+    <label>开始日期：</label>
+    <input type="date" id="startDate">
+    <label>结束日期：</label>
+    <input type="date" id="endDate">
+    <button class="btn-filter" onclick="applyFilter()">筛选</button>
+    <button class="btn-reset" onclick="resetFilter()">重置</button>
+  </div>
+  
   <div class="kpi-row" id="kpiRow">
     <div class="loading">正在加载数据...</div>
   </div>
@@ -137,11 +177,38 @@
   </div>
 </div>
 
+<!-- User Management Page -->
+<div id="userManagePage">
+  <button class="btn-back" onclick="backToDashboard()">← 返回仪表盘</button>
+  <h2 style="margin-bottom: 20px; color: #002FA7;">👥 用户审批管理</h2>
+  <table class="user-table" id="userTable">
+    <thead>
+      <tr>
+        <th>邮箱</th>
+        <th>角色</th>
+        <th>注册时间</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="userTableBody">
+      <tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast" id="toast"></div>
+
 <script>
 const SUPABASE_URL = 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2cWp0dm9ueHdzbWhudG55ZXN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzE5ODMsImV4cCI6MjA5NzQ0Nzk4M30.mBlPq2xNuHROdT39FQ6cw9t8U6IqrjyWl8IqbRo8QOE';
 
 const supabase = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+let currentUser = null;
+let currentUserData = null;
+let charts = {};
 
 // ===================== AUTH STATE =====================
 
@@ -156,31 +223,33 @@ supabase.auth.onAuthStateChange((event, session) => {
 });
 
 async function checkApproval(user) {
-  // Check if user is approved
+  currentUser = user;
   const { data, error } = await supabase
     .from('profiles')
-    .select('approved')
+    .select('*')
     .eq('id', user.id)
     .single();
   
   if (error || !data) {
-    // Profile not found - might be first time, wait a moment for trigger
     await new Promise(r => setTimeout(r, 1500));
     const { data: retry, error: err2 } = await supabase
       .from('profiles')
-      .select('approved')
+      .select('*')
       .eq('id', user.id)
       .single();
-    if (err2 || !retry) {
-      showPending(user.email);
-      return;
-    }
+    if (err2 || !retry) { showPending(user.email); return; }
+    currentUserData = retry;
     if (!retry.approved) { showPending(user.email); return; }
+  } else {
+    currentUserData = data;
+    if (!data.approved) { showPending(user.email); return; }
   }
   
-  if (!data.approved) { showPending(user.email); return; }
+  // Check if admin
+  if (currentUserData.role === 'admin') {
+    document.getElementById('btnManage').style.display = 'block';
+  }
   
-  // Approved - show dashboard
   showDashboard(user);
 }
 
@@ -188,20 +257,38 @@ function showLogin() {
   document.getElementById('loginPage').style.display = 'flex';
   document.getElementById('pendingPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'none';
+  document.getElementById('userManagePage').style.display = 'none';
 }
 
 function showPending(email) {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('pendingPage').style.display = 'flex';
   document.getElementById('dashboardPage').style.display = 'none';
+  document.getElementById('userManagePage').style.display = 'none';
 }
 
 function showDashboard(user) {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('pendingPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'block';
+  document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('userEmail').textContent = user.email || '';
   loadData();
+}
+
+function showUserManage() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'none';
+  document.getElementById('userManagePage').style.display = 'block';
+  loadUsers();
+}
+
+function backToDashboard() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'block';
+  document.getElementById('userManagePage').style.display = 'none';
 }
 
 async function logout() {
@@ -244,7 +331,6 @@ document.getElementById('signupBtn').addEventListener('click', async () => {
   });
   if (error) showError(error.message);
   else {
-    // Sign up successful - check if auto-confirmed
     if (data.session) {
       showInfo('✅ 注册成功！正在检查审批状态...');
       setTimeout(() => checkApproval(data.user), 2000);
@@ -278,13 +364,40 @@ function hideMessages() {
   document.getElementById('loginInfo').style.display = 'none';
 }
 
+// ===================== DATE FILTER =====================
+
+function applyFilter() {
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  if (!startDate && !endDate) {
+    showToast('请选择开始或结束日期', 'error');
+    return;
+  }
+  loadData(startDate, endDate);
+}
+
+function resetFilter() {
+  document.getElementById('startDate').value = '';
+  document.getElementById('endDate').value = '';
+  loadData();
+}
+
 // ===================== DATA LOADING =====================
 
-async function loadData() {
-  const { data, error } = await supabase
+async function loadData(startDate, endDate) {
+  let query = supabase
     .from('ReportAutoPrint')
     .select('*')
     .order('执行时间', { ascending: true });
+  
+  if (startDate) {
+    query = query.gte('执行时间', startDate + 'T00:00:00');
+  }
+  if (endDate) {
+    query = query.lte('执行时间', endDate + 'T23:59:59');
+  }
+  
+  const { data, error } = await query;
   
   if (error) {
     document.getElementById('kpiRow').innerHTML = '';
@@ -293,9 +406,10 @@ async function loadData() {
   }
   if (!data || !data.length) {
     document.getElementById('kpiRow').innerHTML = '<div style="padding:40px;color:#666;">暂无数据</div>';
+    document.getElementById('chartsSection').style.display = 'none';
     return;
   }
-  render(data);
+  render(data, startDate, endDate);
 }
 
 function groupByDate(records) {
@@ -314,7 +428,7 @@ function groupByDate(records) {
   return map;
 }
 
-function render(records) {
+function render(records, startDate, endDate) {
   const grouped = groupByDate(records);
   const dates = Object.keys(grouped).sort();
   const totalPrint = records.reduce((s, r) => s + (r['总数'] || 0), 0);
@@ -325,11 +439,22 @@ function render(records) {
   records.forEach(r => { if (r['耗时分钟'] != null) { totalDuration += r['耗时分钟']; durationCount++; } });
   const avgDuration = durationCount > 0 ? (totalDuration / durationCount).toFixed(1) : '0.0';
 
-  document.getElementById('reportPeriod').textContent =
-    `报告周期：${dates[0] || '--'} - ${dates[dates.length - 1] || '--'} | 共 ${records.length} 条执行记录`;
+  let periodText = '报告周期：';
+  if (startDate && endDate) {
+    periodText += `${startDate} 至 ${endDate}`;
+  } else if (startDate) {
+    periodText += `${startDate} 至今`;
+  } else if (endDate) {
+    periodText += `截至 ${endDate}`;
+  } else {
+    periodText += `${dates[0] || '--'} - ${dates[dates.length - 1] || '--'}`;
+  }
+  periodText += ` | 共 ${records.length} 条执行记录`;
+  
+  document.getElementById('reportPeriod').textContent = periodText;
 
   document.getElementById('kpiRow').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">📦 总打印量</div><div class="kpi-value color-total">${totalPrint}</div><div class="kpi-sub">全周期累计执行总数</div></div>
+    <div class="kpi-card"><div class="kpi-label">📦 总打印量</div><div class="kpi-value color-total">${totalPrint}</div><div class="kpi-sub">筛选累计执行总数</div></div>
     <div class="kpi-card"><div class="kpi-label">✅ 成功数量</div><div class="kpi-value color-success">${totalSuccess}</div><div class="kpi-sub">成功率 ${successRate}%</div></div>
     <div class="kpi-card"><div class="kpi-label">❌ 失败数量</div><div class="kpi-value color-fail">${totalFail}</div><div class="kpi-sub">失败率 ${totalPrint > 0 ? ((totalFail / totalPrint) * 100).toFixed(1) : 0}%</div></div>
     <div class="kpi-card"><div class="kpi-label">⏱️ 平均耗时</div><div class="kpi-value color-duration">${avgDuration}</div><div class="kpi-sub">分钟/每次执行</div></div>
@@ -348,7 +473,12 @@ function renderCharts(grouped) {
   const successRate = dates.map(d => grouped[d].total > 0 ? +((grouped[d].success / grouped[d].total) * 100).toFixed(1) : 0);
   const dailyDuration = dates.map(d => grouped[d].durationCount > 0 ? +(grouped[d].durationSum / grouped[d].durationCount).toFixed(1) : 0);
 
-  new Chart(document.getElementById('chartTrend'), {
+  // Destroy existing charts
+  if (charts.trend) charts.trend.destroy();
+  if (charts.successRate) charts.successRate.destroy();
+  if (charts.duration) charts.duration.destroy();
+
+  charts.trend = new Chart(document.getElementById('chartTrend'), {
     type: 'bar', data: { labels: dates, datasets: [
       { label: '失败', data: dailyFailed, backgroundColor: '#ef4444', stack: 'stack1' },
       { label: '跳过', data: dailySkip, backgroundColor: '#f59e0b', stack: 'stack1' },
@@ -356,11 +486,11 @@ function renderCharts(grouped) {
     ]},
     options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { ticks: { maxRotation: 45 } }, y: { beginAtZero: true } } }
   });
-  new Chart(document.getElementById('chartSuccessRate'), {
+  charts.successRate = new Chart(document.getElementById('chartSuccessRate'), {
     type: 'line', data: { labels: dates, datasets: [{ label: '成功率 (%)', data: successRate, borderColor: '#002FA7', backgroundColor: 'rgba(0,47,167,0.1)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#002FA7' }] },
     options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }
   });
-  new Chart(document.getElementById('chartDuration'), {
+  charts.duration = new Chart(document.getElementById('chartDuration'), {
     type: 'bar', data: { labels: dates, datasets: [{ label: '平均耗时', data: dailyDuration, backgroundColor: '#00C3FF', borderRadius: 4 }] },
     options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
@@ -376,6 +506,101 @@ function renderFailTable(grouped) {
   });
   if (!rows) rows = '<tr><td colspan="5" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
   document.getElementById('failTableContainer').innerHTML = `<table class="fail-table"><tr><th>执行时间</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>${rows}</table>`;
+}
+
+// ===================== USER MANAGEMENT =====================
+
+async function loadUsers() {
+  const tbody = document.getElementById('userTableBody');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>';
+  
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:#ef4444;">加载失败：${error.message}</td></tr>`;
+    return;
+  }
+  
+  if (!data || !data.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">暂无用户</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = '';
+  data.forEach(user => {
+    const tr = document.createElement('tr');
+    const statusBadge = user.approved 
+      ? '<span class="status-badge status-approved">已批准</span>'
+      : '<span class="status-badge status-pending">待审批</span>';
+    const actions = user.approved
+      ? '<span style="color:#10b981; font-weight:600;">✅ 已批准</span>'
+      : `<button class="btn-approve" onclick="approveUser('${user.id}', '${user.email}')">批准</button><button class="btn-reject" onclick="rejectUser('${user.id}', '${user.email}')">拒绝</button>`;
+    
+    tr.innerHTML = `
+      <td>${user.email}</td>
+      <td>${user.role || 'viewer'}</td>
+      <td>${user.created_at ? new Date(user.created_at).toLocaleString('zh-CN') : '--'}</td>
+      <td>${statusBadge}</td>
+      <td>${actions}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function approveUser(userId, email) {
+  if (!confirm(`确定要批准用户 ${email} 吗？`)) return;
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      approved: true, 
+      approved_at: new Date().toISOString(),
+      approved_by: currentUser.id 
+    })
+    .eq('id', userId);
+  
+  if (error) {
+    showToast('批准失败：' + error.message, 'error');
+  } else {
+    showToast('✅ 已批准用户 ' + email, 'success');
+    loadUsers();
+  }
+}
+
+async function rejectUser(userId, email) {
+  if (!confirm(`确定要拒绝用户 ${email} 吗？此操作将删除该用户的注册申请。`)) return;
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      approved: false, 
+      approved_at: null,
+      approved_by: null 
+    })
+    .eq('id', userId);
+  
+  if (error) {
+    showToast('操作失败：' + error.message, 'error');
+  } else {
+    showToast('⚠️ 已拒绝用户 ' + email, 'error');
+    loadUsers();
+  }
+}
+
+// ===================== TOAST NOTIFICATION =====================
+
+function showToast(message, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast toast-' + type;
+  toast.style.display = 'block';
+  
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 3000);
 }
 </script>
 </body>
