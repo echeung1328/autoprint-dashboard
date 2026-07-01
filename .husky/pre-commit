@@ -1,0 +1,18 @@
+#!/bin/sh
+# AutoPrint RLS 安全预提交钩子
+# 在每次提交前自动运行 RLS 安全验证
+
+echo "🔒 运行 RLS 安全验证..."
+node scripts/validate-rls.js
+
+# 如果验证失败，阻止提交
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ RLS 安全验证失败！"
+  echo "请修复上述问题后再提交。"
+  echo ""
+  echo "如需跳过检查（不推荐），使用: git commit --no-verify"
+  exit 1
+fi
+
+echo "✅ RLS 安全验证通过"
