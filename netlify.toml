@@ -1,0 +1,22 @@
+# Netlify 配置 - 手动部署模式
+# 注意：需要在 Netlify 仪表板中禁用自动发布
+# 路径：Site settings → Build & deploy → Deployment → Stop auto-publishing
+
+[build]
+  # 正常构建配置（当手动触发时）
+  command = "echo 'Site is static - no build required'"
+  publish = "."
+  
+  # 如果需要构建步骤，取消注释下面一行
+  # command = "npm run build"
+  # publish = "dist"
+
+# 环境变量示例（如需要）
+[build.environment]
+  NODE_VERSION = "18"
+
+# 重定向规则（可选）
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
