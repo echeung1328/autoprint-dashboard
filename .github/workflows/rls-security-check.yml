@@ -1,0 +1,58 @@
+# AutoPrint RLS 安全自动检查
+# 每次 PR 提交时自动运行，确保不存在 RLS 无限递归和数据泄露漏洞
+
+name: RLS Security Check
+
+on:
+  pull_request:
+    branches: [ master, main, develop ]
+  push:
+    branches: [ master, main ]
+
+jobs:
+  rls-validation:
+    name: Validate RLS Policies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+      
+      - name: 设置 Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: 安装依赖
+        run: npm install
+      
+      - name: 运行 RLS 安全验证
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/validate-rls.js
+      
+      - name: 检查 SQL 迁移文件
+        run: |
+          echo "检查 SQL 迁移文件中的 RLS 策略定义..."
+          # 查找所有 SQL 文件
+          find . -name "*.sql" -type f | while read sqlfile; do
+            echo "  检查: $sqlfile"
+            # 检查无限递归模式
+            if grep -q "FROM public.profiles" "$sqlfile" && grep -q "USING.*profiles" "$sqlfile"; then
+              echo "  ⚠️  警告: $sqlfile 可能包含 RLS 递归模式"
+            fi
+            # 检查 public 角色策略
+            if grep -q "TO public" "$sqlfile" || grep -q "TO anon" "$sqlfile"; then
+              echo "  ⚠️  警告: $sqlfile 包含对 public/anon 的策略"
+            fi
+          done
+      
+      - name: 验证结果
+        if: failure()
+        run: |
+          echo "::error::RLS 安全验证失败！"
+          echo "::error::请修复 RLS 无限递归或数据泄露问题后再合并。"
+          exit 1
