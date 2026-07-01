@@ -514,10 +514,8 @@ async function loadUsers() {
   const tbody = document.getElementById('userTableBody');
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>';
   
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
+  // Use RPC function (SECURITY DEFINER) to bypass RLS for admins
+  const { data, error } = await supabase.rpc('get_all_profiles');
   
   if (error) {
     tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:#ef4444;">加载失败：${error.message}</td></tr>`;
@@ -553,14 +551,11 @@ async function loadUsers() {
 async function approveUser(userId, email) {
   if (!confirm(`确定要批准用户 ${email} 吗？`)) return;
   
-  const { error } = await supabase
-    .from('profiles')
-    .update({ 
-      approved: true, 
-      approved_at: new Date().toISOString(),
-      approved_by: currentUser.id 
-    })
-    .eq('id', userId);
+  // Use RPC function (SECURITY DEFINER) for admin approval
+  const { error } = await supabase.rpc('approve_user', {
+    target_user_id: userId,
+    approve: true
+  });
   
   if (error) {
     showToast('批准失败：' + error.message, 'error');
@@ -571,16 +566,13 @@ async function approveUser(userId, email) {
 }
 
 async function rejectUser(userId, email) {
-  if (!confirm(`确定要拒绝用户 ${email} 吗？此操作将删除该用户的注册申请。`)) return;
+  if (!confirm(`确定要拒绝用户 ${email} 吗？此操作将标记该用户为未批准状态。`)) return;
   
-  const { error } = await supabase
-    .from('profiles')
-    .update({ 
-      approved: false, 
-      approved_at: null,
-      approved_by: null 
-    })
-    .eq('id', userId);
+  // Use RPC function (SECURITY DEFINER) for admin rejection
+  const { error } = await supabase.rpc('approve_user', {
+    target_user_id: userId,
+    approve: false
+  });
   
   if (error) {
     showToast('操作失败：' + error.message, 'error');
