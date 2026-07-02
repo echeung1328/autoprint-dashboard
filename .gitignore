@@ -35,3 +35,22 @@ nul*
 # WorkBuddy
 .workbuddy/emory/*.md
 !.workbuddy/emory/MEMORY.md
+
+# Dev scripts & tools (本地开发工具，不需要入库)
+gen_*.py
+gen_*.js
+generate_*.js
+parse_csv.py
+test_rls.py
+upload_csv_to_supabase.py
+
+# SQL data files (数据导入脚本，不需要入库)
+insert_final*.sql
+insert_sql.txt
+
+# Temp JSON data (临时数据，不需要入库)
+package.json
+project_items.json
+query*.json
+records_to_upload.json
+result.json
