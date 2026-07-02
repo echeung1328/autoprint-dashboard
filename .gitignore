@@ -42,7 +42,7 @@ gen_*.js
 generate_*.js
 parse_csv.py
 test_rls.py
-upload_*_to_supabase.py
+*supabase*.py
 
 # SQL data files (数据导入脚本，不需要入库)
 insert_final*.sql
