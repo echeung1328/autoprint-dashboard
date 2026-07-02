@@ -56,11 +56,21 @@
   .btn-filter:hover { background: #001f8a; }
   .btn-reset { padding: 8px 16px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
   .btn-reset:hover { background: #f0f4ff; }
-  .kpi-row { display: flex; gap: 16px; padding: 20px 32px; flex-wrap: wrap; }
-  .kpi-card { flex: 1; min-width: 180px; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-  .kpi-label { font-size: 13px; color: #666; margin-bottom: 8px; }
-  .kpi-value { font-size: 32px; font-weight: 700; }
-  .kpi-sub { font-size: 12px; color: #999; margin-top: 4px; }
+  .kpi-row { display: flex; gap: 20px; padding: 24px 32px; flex-wrap: wrap; }
+  .kpi-card { flex: 1; min-width: 200px; background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); position: relative; overflow: hidden; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s; cursor: default; }
+  .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; border-radius: 16px 16px 0 0; }
+  .kpi-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.12); }
+  .kpi-card.card-total::before { background: linear-gradient(90deg, #002FA7, #00C3FF); }
+  .kpi-card.card-success::before { background: linear-gradient(90deg, #10b981, #34d399); }
+  .kpi-card.card-fail::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+  .kpi-card.card-duration::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .kpi-icon { font-size: 32px; margin-bottom: 12px; display: block; }
+  .kpi-label { font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 500; letter-spacing: 0.3px; }
+  .kpi-value { font-size: 38px; font-weight: 700; line-height: 1.1; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+  .kpi-sub { font-size: 12px; color: #94a3b8; }
+  .kpi-trend { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; margin-top: 8px; }
+  .kpi-trend.up { background: #ecfdf5; color: #10b981; }
+  .kpi-trend.down { background: #fef2f2; color: #ef4444; }
   .color-total { color: #002FA7; }
   .color-success { color: #10b981; }
   .color-fail { color: #ef4444; }
@@ -454,11 +464,38 @@ function render(records, startDate, endDate) {
   document.getElementById('reportPeriod').textContent = periodText;
 
   document.getElementById('kpiRow').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">📦 总打印量</div><div class="kpi-value color-total">${totalPrint}</div><div class="kpi-sub">筛选累计执行总数</div></div>
-    <div class="kpi-card"><div class="kpi-label">✅ 成功数量</div><div class="kpi-value color-success">${totalSuccess}</div><div class="kpi-sub">成功率 ${successRate}%</div></div>
-    <div class="kpi-card"><div class="kpi-label">❌ 失败数量</div><div class="kpi-value color-fail">${totalFail}</div><div class="kpi-sub">失败率 ${totalPrint > 0 ? ((totalFail / totalPrint) * 100).toFixed(1) : 0}%</div></div>
-    <div class="kpi-card"><div class="kpi-label">⏱️ 平均耗时</div><div class="kpi-value color-duration">${avgDuration}</div><div class="kpi-sub">分钟/每次执行</div></div>
+    <div class="kpi-card card-total">
+      <span class="kpi-icon">📦</span>
+      <div class="kpi-label">总打印量</div>
+      <div class="kpi-value color-total" data-target="${totalPrint}">0</div>
+      <div class="kpi-sub">筛选累计执行总数</div>
+      ${getTrendBadge(records, 'total')}
+    </div>
+    <div class="kpi-card card-success">
+      <span class="kpi-icon">✅</span>
+      <div class="kpi-label">成功数量</div>
+      <div class="kpi-value color-success" data-target="${totalSuccess}">0</div>
+      <div class="kpi-sub">成功率 ${successRate}%</div>
+      ${getTrendBadge(records, 'success')}
+    </div>
+    <div class="kpi-card card-fail">
+      <span class="kpi-icon">❌</span>
+      <div class="kpi-label">失败数量</div>
+      <div class="kpi-value color-fail" data-target="${totalFail}">0</div>
+      <div class="kpi-sub">失败率 ${totalPrint > 0 ? ((totalFail / totalPrint) * 100).toFixed(1) : 0}%</div>
+      ${getTrendBadge(records, 'fail')}
+    </div>
+    <div class="kpi-card card-duration">
+      <span class="kpi-icon">⏱️</span>
+      <div class="kpi-label">平均耗时</div>
+      <div class="kpi-value color-duration" data-target="${avgDuration}">0</div>
+      <div class="kpi-sub">分钟/每次执行</div>
+      ${getTrendBadge(records, 'duration')}
+    </div>
   `;
+  
+  // Trigger count-up animation
+  setTimeout(() => animateKpiValues(), 100);
 
   document.getElementById('chartsSection').style.display = 'grid';
   renderCharts(grouped);
@@ -506,6 +543,74 @@ function renderFailTable(grouped) {
   });
   if (!rows) rows = '<tr><td colspan="5" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
   document.getElementById('failTableContainer').innerHTML = `<table class="fail-table"><tr><th>执行时间</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>${rows}</table>`;
+}
+
+// ===================== KPI ANIMATION =====================
+
+function animateKpiValues() {
+  const kpiValues = document.querySelectorAll('.kpi-value[data-target]');
+  kpiValues.forEach(el => {
+    const target = parseFloat(el.getAttribute('data-target')) || 0;
+    const isFloat = target % 1 !== 0;
+    const duration = 1200;
+    const startTime = performance.now();
+    
+    function update(currentTime) {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = eased * target;
+      
+      el.textContent = isFloat ? current.toFixed(1) : Math.floor(current).toLocaleString();
+      
+      if (progress < 1) {
+        requestAnimationFrame(update);
+      } else {
+        el.textContent = isFloat ? target.toFixed(1) : target.toLocaleString();
+      }
+    }
+    
+    requestAnimationFrame(update);
+  });
+}
+
+function getTrendBadge(records, type) {
+  if (!records || records.length < 2) return '';
+  
+  // Split records into first half and second half
+  const mid = Math.floor(records.length / 2);
+  const firstHalf = records.slice(0, mid);
+  const secondHalf = records.slice(mid);
+  
+  let firstVal = 0, secondVal = 0;
+  
+  if (type === 'total') {
+    firstVal = firstHalf.reduce((s, r) => s + (r['总数'] || 0), 0);
+    secondVal = secondHalf.reduce((s, r) => s + (r['总数'] || 0), 0);
+  } else if (type === 'success') {
+    firstVal = firstHalf.reduce((s, r) => s + (r['成功'] || 0), 0);
+    secondVal = secondHalf.reduce((s, r) => s + (r['成功'] || 0), 0);
+  } else if (type === 'fail') {
+    firstVal = firstHalf.reduce((s, r) => s + (r['失败'] || 0), 0);
+    secondVal = secondHalf.reduce((s, r) => s + (r['失败'] || 0), 0);
+  } else if (type === 'duration') {
+    const firstDurations = firstHalf.filter(r => r['耗时分钟'] != null).map(r => r['耗时分钟']);
+    const secondDurations = secondHalf.filter(r => r['耗时分钟'] != null).map(r => r['耗时分钟']);
+    firstVal = firstDurations.length > 0 ? firstDurations.reduce((a, b) => a + b, 0) / firstDurations.length : 0;
+    secondVal = secondDurations.length > 0 ? secondDurations.reduce((a, b) => a + b, 0) / secondDurations.length : 0;
+  }
+  
+  if (firstVal === 0 && secondVal === 0) return '';
+  
+  const change = firstVal === 0 ? 100 : ((secondVal - firstVal) / firstVal * 100);
+  const isPositive = type === 'fail' || type === 'duration' ? change < 0 : change > 0;
+  const isUp = change > 0;
+  
+  const arrow = isUp ? '↑' : '↓';
+  const colorClass = isPositive ? 'up' : 'down';
+  
+  return `<div class="kpi-trend ${colorClass}">${arrow} ${Math.abs(change).toFixed(1)}%</div>`;
 }
 
 // ===================== USER MANAGEMENT =====================
