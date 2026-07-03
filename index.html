@@ -56,6 +56,10 @@
   .btn-filter:hover { background: #001f8a; }
   .btn-reset { padding: 8px 16px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
   .btn-reset:hover { background: #f0f4ff; }
+  .btn-export { padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-left: auto; }
+  .btn-export:hover { background: #059669; }
+  .filter-row select { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white; cursor: pointer; }
+  .filter-row select:focus { border-color: #002FA7; box-shadow: 0 0 0 3px rgba(0,47,167,0.1); outline: none; }
   .kpi-row { display: flex; gap: 20px; padding: 24px 32px; flex-wrap: wrap; }
   .kpi-card { flex: 1; min-width: 200px; background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); position: relative; overflow: hidden; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s; cursor: default; }
   .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; border-radius: 16px 16px 0 0; }
@@ -79,6 +83,11 @@
   .chart-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .chart-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #1e293b; }
   .full-width { grid-column: 1 / -1; }
+  .peak-banner { display: flex; align-items: center; gap: 12px; padding: 12px 20px; margin: 0 32px 16px; background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fcd34d; border-radius: 12px; font-size: 14px; }
+  .peak-banner .peak-icon { font-size: 24px; }
+  .peak-banner .peak-label { color: #92400e; font-weight: 600; }
+  .peak-banner .peak-value { color: #b45309; font-weight: 700; font-size: 16px; }
+  .peak-banner .peak-date { color: #6b7280; font-size: 13px; }
   .fail-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
   .fail-table th, .fail-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
   .fail-table th { background: #f8fafc; font-weight: 600; color: #475569; }
@@ -160,12 +169,25 @@
     <input type="date" id="startDate">
     <label>结束日期：</label>
     <input type="date" id="endDate">
+    <label>统计频率：</label>
+    <select id="granularity" onchange="onGranularityChange()">
+      <option value="day">按日</option>
+      <option value="week">按周</option>
+      <option value="month">按月</option>
+      <option value="year">按年</option>
+    </select>
     <button class="btn-filter" onclick="applyFilter()">筛选</button>
     <button class="btn-reset" onclick="resetFilter()">重置</button>
+    <button class="btn-export" onclick="exportCSV()" id="btnExport" style="display:none;">📥 导出 CSV</button>
   </div>
   
   <div class="kpi-row" id="kpiRow">
     <div class="loading">正在加载数据...</div>
+  </div>
+  <div id="peakBanner" class="peak-banner" style="display:none;">
+    <span class="peak-icon">🏔️</span>
+    <span class="peak-label">负载高峰</span>
+    <span id="peakContent"></span>
   </div>
   <div class="charts" id="chartsSection" style="display:none;">
     <div class="chart-box full-width">
@@ -219,6 +241,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 let currentUser = null;
 let currentUserData = null;
 let charts = {};
+let lastRecords = [];
+let currentGranularity = 'day';
 
 // ===================== AUTH STATE =====================
 
@@ -392,6 +416,50 @@ function resetFilter() {
   loadData();
 }
 
+function onGranularityChange() {
+  currentGranularity = document.getElementById('granularity').value;
+  if (lastRecords.length > 0) {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    render(lastRecords, startDate, endDate);
+  }
+}
+
+// ===================== CSV EXPORT =====================
+
+function exportCSV() {
+  if (!lastRecords || lastRecords.length === 0) {
+    showToast('暂无数据可导出', 'error');
+    return;
+  }
+
+  const headers = ['执行时间', 'Title', '总数', '成功', '失败', '跳过', '耗时分钟'];
+  const rows = lastRecords.map(r => [
+    r['执行时间'] || '',
+    '"' + (r['Title'] || '').replace(/"/g, '""') + '"',
+    r['总数'] || 0,
+    r['成功'] || 0,
+    r['失败'] || 0,
+    r['跳过'] || 0,
+    r['耗时分钟'] != null ? r['耗时分钟'] : ''
+  ]);
+
+  const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const now = new Date();
+  const filename = `AutoPrint_Report_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}.csv`;
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast('✅ CSV 已导出: ' + filename, 'success');
+}
+
 // ===================== DATA LOADING =====================
 
 async function loadData(startDate, endDate) {
@@ -417,30 +485,54 @@ async function loadData(startDate, endDate) {
   if (!data || !data.length) {
     document.getElementById('kpiRow').innerHTML = '<div style="padding:40px;color:#666;">暂无数据</div>';
     document.getElementById('chartsSection').style.display = 'none';
+    document.getElementById('peakBanner').style.display = 'none';
+    document.getElementById('btnExport').style.display = 'none';
     return;
   }
+  lastRecords = data;
+  document.getElementById('btnExport').style.display = 'block';
   render(data, startDate, endDate);
 }
 
-function groupByDate(records) {
+function getISOWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+}
+
+function getGroupKey(dateStr, granularity) {
+  const d = new Date(dateStr);
+  if (granularity === 'week') {
+    return d.getFullYear() + '-W' + String(getISOWeek(d)).padStart(2, '0');
+  } else if (granularity === 'month') {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  } else if (granularity === 'year') {
+    return String(d.getFullYear());
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+function groupByDate(records, granularity) {
   const map = {};
   records.forEach(r => {
     if (!r['执行时间']) return;
-    const date = new Date(r['执行时间']).toISOString().slice(0, 10);
-    if (!map[date]) map[date] = { total: 0, success: 0, fail: 0, skip: 0, durationSum: 0, durationCount: 0, failures: [] };
-    map[date].total += r['总数'] || 0;
-    map[date].success += r['成功'] || 0;
-    map[date].fail += r['失败'] || 0;
-    map[date].skip += r['跳过'] || 0;
-    if (r['耗时分钟'] != null) { map[date].durationSum += r['耗时分钟']; map[date].durationCount += 1; }
-    if (r['失败'] > 0) map[date].failures.push({ time: r['执行时间'], title: r['Title'] || '', total: r['总数'], fail: r['失败'] });
+    const key = getGroupKey(r['执行时间'], granularity || 'day');
+    if (!map[key]) map[key] = { total: 0, success: 0, fail: 0, skip: 0, durationSum: 0, durationCount: 0, failures: [] };
+    map[key].total += r['总数'] || 0;
+    map[key].success += r['成功'] || 0;
+    map[key].fail += r['失败'] || 0;
+    map[key].skip += r['跳过'] || 0;
+    if (r['耗时分钟'] != null) { map[key].durationSum += r['耗时分钟']; map[key].durationCount += 1; }
+    if (r['失败'] > 0) map[key].failures.push({ time: r['执行时间'], title: r['Title'] || '', total: r['总数'], fail: r['失败'] });
   });
   return map;
 }
 
 function render(records, startDate, endDate) {
-  const grouped = groupByDate(records);
-  const dates = Object.keys(grouped).sort();
+  const grouped = groupByDate(records, currentGranularity);
+  const keys = Object.keys(grouped).sort();
   const totalPrint = records.reduce((s, r) => s + (r['总数'] || 0), 0);
   const totalSuccess = records.reduce((s, r) => s + (r['成功'] || 0), 0);
   const totalFail = records.reduce((s, r) => s + (r['失败'] || 0), 0);
@@ -448,6 +540,9 @@ function render(records, startDate, endDate) {
   let totalDuration = 0, durationCount = 0;
   records.forEach(r => { if (r['耗时分钟'] != null) { totalDuration += r['耗时分钟']; durationCount++; } });
   const avgDuration = durationCount > 0 ? (totalDuration / durationCount).toFixed(1) : '0.0';
+
+  const granLabels = { day: '日', week: '周', month: '月', year: '年' };
+  const granLabel = granLabels[currentGranularity] || '日';
 
   let periodText = '报告周期：';
   if (startDate && endDate) {
@@ -457,9 +552,9 @@ function render(records, startDate, endDate) {
   } else if (endDate) {
     periodText += `截至 ${endDate}`;
   } else {
-    periodText += `${dates[0] || '--'} - ${dates[dates.length - 1] || '--'}`;
+    periodText += `${keys[0] || '--'} - ${keys[keys.length - 1] || '--'}`;
   }
-  periodText += ` | 共 ${records.length} 条执行记录`;
+  periodText += ` | 共 ${records.length} 条执行记录 | 统计频率：按${granLabel}`;
   
   document.getElementById('reportPeriod').textContent = periodText;
 
@@ -500,35 +595,84 @@ function render(records, startDate, endDate) {
   document.getElementById('chartsSection').style.display = 'grid';
   renderCharts(grouped);
   renderFailTable(grouped);
+  renderPeakBanner(grouped, keys);
+}
+
+function renderPeakBanner(grouped, keys) {
+  const banner = document.getElementById('peakBanner');
+  if (!keys || keys.length === 0) { banner.style.display = 'none'; return; }
+  
+  let peakKey = '', peakTotal = 0;
+  keys.forEach(k => {
+    if (grouped[k].total > peakTotal) { peakTotal = grouped[k].total; peakKey = k; }
+  });
+  
+  if (peakTotal === 0) { banner.style.display = 'none'; return; }
+  
+  const granLabels = { day: '日', week: '周', month: '月', year: '年' };
+  const granLabel = granLabels[currentGranularity] || '日';
+  
+  document.getElementById('peakContent').innerHTML = 
+    `最高打印负载出现在 <span class="peak-value">${peakKey}</span>（按${granLabel}），` +
+    `共打印 <span class="peak-value">${peakTotal.toLocaleString()}</span> 次`;
+  banner.style.display = 'flex';
 }
 
 function renderCharts(grouped) {
-  const dates = Object.keys(grouped).sort();
-  const dailyFailed = dates.map(d => grouped[d].fail);
-  const dailySkip = dates.map(d => grouped[d].skip);
-  const dailySuccess = dates.map(d => grouped[d].success);
-  const successRate = dates.map(d => grouped[d].total > 0 ? +((grouped[d].success / grouped[d].total) * 100).toFixed(1) : 0);
-  const dailyDuration = dates.map(d => grouped[d].durationCount > 0 ? +(grouped[d].durationSum / grouped[d].durationCount).toFixed(1) : 0);
+  const keys = Object.keys(grouped).sort();
+  const dailyFailed = keys.map(k => grouped[k].fail);
+  const dailySkip = keys.map(k => grouped[k].skip);
+  const dailySuccess = keys.map(k => grouped[k].success);
+  const dailyTotal = keys.map(k => grouped[k].total);
+  const successRate = keys.map(k => grouped[k].total > 0 ? +((grouped[k].success / grouped[k].total) * 100).toFixed(1) : 0);
+  const dailyDuration = keys.map(k => grouped[k].durationCount > 0 ? +(grouped[k].durationSum / grouped[k].durationCount).toFixed(1) : 0);
+
+  // Find peak index for highlight
+  let peakIdx = 0;
+  for (let i = 1; i < dailyTotal.length; i++) {
+    if (dailyTotal[i] > dailyTotal[peakIdx]) peakIdx = i;
+  }
+  // Highlight colors for peak bar
+  const successColors = keys.map((_, i) => i === peakIdx ? '#059669' : '#10b981');
+  const failColors = keys.map((_, i) => i === peakIdx ? '#dc2626' : '#ef4444');
+  const skipColors = keys.map((_, i) => i === peakIdx ? '#d97706' : '#f59e0b');
 
   // Destroy existing charts
   if (charts.trend) charts.trend.destroy();
   if (charts.successRate) charts.successRate.destroy();
   if (charts.duration) charts.duration.destroy();
 
+  const granLabels = { day: '每日', week: '每周', month: '每月', year: '每年' };
+  const granLabel = granLabels[currentGranularity] || '每日';
+
+  // Update chart titles
+  document.querySelector('#chartTrend').closest('.chart-box').querySelector('h3').textContent = 
+    `📈 ${granLabel}打印量趋势（总数 / 成功 / 失败）` + (dailyTotal.length > 1 ? `  🏔️ 峰值: ${keys[peakIdx]} (${dailyTotal[peakIdx].toLocaleString()})` : '');
+  document.querySelector('#chartSuccessRate').closest('.chart-box').querySelector('h3').textContent = 
+    `📊 ${granLabel}成功率（%）`;
+  document.querySelector('#chartDuration').closest('.chart-box').querySelector('h3').textContent = 
+    `⏱️ ${granLabel}平均执行耗时（分钟）`;
+
   charts.trend = new Chart(document.getElementById('chartTrend'), {
-    type: 'bar', data: { labels: dates, datasets: [
-      { label: '失败', data: dailyFailed, backgroundColor: '#ef4444', stack: 'stack1' },
-      { label: '跳过', data: dailySkip, backgroundColor: '#f59e0b', stack: 'stack1' },
-      { label: '成功', data: dailySuccess, backgroundColor: '#10b981', stack: 'stack1' }
+    type: 'bar', data: { labels: keys, datasets: [
+      { label: '失败', data: dailyFailed, backgroundColor: failColors, stack: 'stack1' },
+      { label: '跳过', data: dailySkip, backgroundColor: skipColors, stack: 'stack1' },
+      { label: '成功', data: dailySuccess, backgroundColor: successColors, stack: 'stack1' }
     ]},
-    options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { ticks: { maxRotation: 45 } }, y: { beginAtZero: true } } }
+    options: { responsive: true, plugins: { 
+      legend: { position: 'top' },
+      tooltip: { callbacks: { afterLabel: function(ctx) { 
+        if (ctx.dataIndex === peakIdx) return '🏔️ 负载高峰'; 
+        return null; 
+      }}}
+    }, scales: { x: { ticks: { maxRotation: 45 } }, y: { beginAtZero: true } } }
   });
   charts.successRate = new Chart(document.getElementById('chartSuccessRate'), {
-    type: 'line', data: { labels: dates, datasets: [{ label: '成功率 (%)', data: successRate, borderColor: '#002FA7', backgroundColor: 'rgba(0,47,167,0.1)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#002FA7' }] },
+    type: 'line', data: { labels: keys, datasets: [{ label: '成功率 (%)', data: successRate, borderColor: '#002FA7', backgroundColor: 'rgba(0,47,167,0.1)', fill: true, tension: 0.3, pointRadius: keys.map((_, i) => i === peakIdx ? 7 : 4), pointBackgroundColor: keys.map((_, i) => i === peakIdx ? '#ef4444' : '#002FA7') }] },
     options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }
   });
   charts.duration = new Chart(document.getElementById('chartDuration'), {
-    type: 'bar', data: { labels: dates, datasets: [{ label: '平均耗时', data: dailyDuration, backgroundColor: '#00C3FF', borderRadius: 4 }] },
+    type: 'bar', data: { labels: keys, datasets: [{ label: '平均耗时', data: dailyDuration, backgroundColor: keys.map((_, i) => i === peakIdx ? '#0099CC' : '#00C3FF'), borderRadius: 4 }] },
     options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 }
