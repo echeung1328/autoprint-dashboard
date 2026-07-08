@@ -67,7 +67,7 @@
   .kpi-card.card-total::before { background: linear-gradient(90deg, #002FA7, #00C3FF); }
   .kpi-card.card-success::before { background: linear-gradient(90deg, #10b981, #34d399); }
   .kpi-card.card-fail::before { background: linear-gradient(90deg, #ef4444, #f87171); }
-  .kpi-card.card-duration::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .kpi-card.card-duration::before { background: linear-gradient(90deg, #00C3FF, #66D9FF); }
   .kpi-icon { font-size: 32px; margin-bottom: 12px; display: block; }
   .kpi-label { font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 500; letter-spacing: 0.3px; }
   .kpi-value { font-size: 38px; font-weight: 700; line-height: 1.1; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
@@ -78,16 +78,24 @@
   .color-total { color: #002FA7; }
   .color-success { color: #10b981; }
   .color-fail { color: #ef4444; }
-  .color-duration { color: #f59e0b; }
+  .color-duration { color: #00C3FF; }
   .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 0 32px 20px; }
   .chart-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .chart-box h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #1e293b; }
   .full-width { grid-column: 1 / -1; }
-  .peak-banner { display: flex; align-items: center; gap: 12px; padding: 12px 20px; margin: 0 32px 16px; background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fcd34d; border-radius: 12px; font-size: 14px; }
+  .peak-banner { display: flex; align-items: center; gap: 12px; padding: 12px 20px; margin: 0 32px 16px; background: linear-gradient(135deg, #eff6ff, #dbeafe); border: 1px solid #93c5fd; border-radius: 12px; font-size: 14px; }
   .peak-banner .peak-icon { font-size: 24px; }
-  .peak-banner .peak-label { color: #92400e; font-weight: 600; }
-  .peak-banner .peak-value { color: #b45309; font-weight: 700; font-size: 16px; }
+  .peak-banner .peak-label { color: #002FA7; font-weight: 600; }
+  .peak-banner .peak-value { color: #002FA7; font-weight: 700; font-size: 16px; }
   .peak-banner .peak-date { color: #6b7280; font-size: 13px; }
+
+  /* Tab Navigation */
+  .tab-nav { display: flex; gap: 0; padding: 0 32px; margin-top: 16px;}
+  .tab-btn { padding: 10px 24px; font-size: 14px; font-weight: 600; color: #64748b; background: transparent; border: none; border-bottom: 3px solid transparent; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .tab-btn:hover { color: #002FA7; }
+  .tab-btn.active { color: #002FA7; border-bottom-color: #002FA7; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
   .fail-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
   .fail-table th, .fail-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
   .fail-table th { background: #f8fafc; font-weight: 600; color: #475569; }
@@ -108,7 +116,7 @@
   .btn-back { padding: 8px 16px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
   .btn-back:hover { background: #f0f4ff; }
   .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
-  .status-pending { background: #fef3c7; color: #d97706; }
+  .status-pending { background: #eff6ff; color: #002FA7; }
   .status-approved { background: #d1fae5; color: #059669; }
   .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; z-index: 1000; display: none; }
   .toast-success { background: #d1fae5; color: #059669; border: 1px solid #10b981; }
@@ -181,9 +189,18 @@
     <button class="btn-export" onclick="exportCSV()" id="btnExport" style="display:none;">📥 导出 CSV</button>
   </div>
   
+  <!-- Tab Navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" id="tabOverview" onclick="switchTab('overview')">📊 数据概览</button>
+    <button class="tab-btn" id="tabPeaks" onclick="switchTab('peaks')">📅 年度负载高峰</button>
+  </div>
+
+  <!-- Tab: Overview (default) -->
+  <div class="tab-panel active" id="panelOverview">
   <div class="kpi-row" id="kpiRow">
     <div class="loading">正在加载数据...</div>
   </div>
+  
   <div id="peakBanner" class="peak-banner" style="display:none;">
     <span class="peak-icon">🏔️</span>
     <span class="peak-label">负载高峰</span>
@@ -207,6 +224,46 @@
       <div id="failTableContainer"></div>
     </div>
   </div>
+  </div><!-- /panelOverview -->
+
+  <!-- Tab: Yearly Peaks -->
+  <div class="tab-panel" id="panelPeaks" style="padding: 24px 32px;">
+    <h3 style="font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 20px;">📅 本年度负载高峰分析</h3>
+    <p style="font-size: 13px; color: #64748b; margin-bottom: 24px; line-height: 1.6;">
+      当前自然年（<span id="peakYearLabel"></span>）内，按日/周/月三个维度统计打印负载峰值，帮助快速定位容量瓶颈和异常高峰。
+    </p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 28px;">
+      <div style="background: white; border-radius: 14px; padding: 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border-top: 4px solid #002FA7;">
+        <div style="font-size: 14px; color: #64748b; margin-bottom: 10px; font-weight: 600;">🏔️ 最高日打印量</div>
+        <div style="font-size: 36px; font-weight: 800; color: #002FA7; margin-bottom: 6px;" id="peakDayValue">--</div>
+        <div style="font-size: 14px; color: #94a3b8;" id="peakDayDate">暂无数据</div>
+      </div>
+      <div style="background: white; border-radius: 14px; padding: 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border-top: 4px solid #00C3FF;">
+        <div style="font-size: 14px; color: #64748b; margin-bottom: 10px; font-weight: 600;">📊 最高周打印量</div>
+        <div style="font-size: 36px; font-weight: 800; color: #00C3FF; margin-bottom: 6px;" id="peakWeekValue">--</div>
+        <div style="font-size: 14px; color: #94a3b8;" id="peakWeekDate">暂无数据</div>
+      </div>
+      <div style="background: white; border-radius: 14px; padding: 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border-top: 4px solid #001D70;">
+        <div style="font-size: 14px; color: #64748b; margin-bottom: 10px; font-weight: 600;">📈 最高月打印量</div>
+        <div style="font-size: 36px; font-weight: 800; color: #001D70; margin-bottom: 6px;" id="peakMonthValue">--</div>
+        <div style="font-size: 14px; color: #94a3b8;" id="peakMonthDate">暂无数据</div>
+      </div>
+    </div>
+
+    <!-- Monthly breakdown chart for peaks tab -->
+    <div style="background: white; border-radius: 14px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
+      <h4 style="font-size: 15px; font-weight: 600; color: #334155; margin-bottom: 16px;">📊 月度打印总量分布</h4>
+      <canvas id="chartPeakMonthly" height="200"></canvas>
+    </div>
+
+    <!-- Empty state -->
+    <div id="peaksEmptyState" style="display:none; text-align: center; padding: 60px 20px; color: #94a3b8;">
+      <div style="font-size: 48px; margin-bottom: 12px;">📭</div>
+      <div style="font-size: 15px; font-weight: 600;">本年度暂无打印数据</div>
+      <div style="font-size: 13px; margin-top: 4px;">年度负载高峰将在有数据后自动计算</div>
+    </div>
+  </div><!-- /panelPeaks -->
+
 </div>
 
 <!-- User Management Page -->
@@ -460,9 +517,21 @@ function exportCSV() {
   showToast('✅ CSV 已导出: ' + filename, 'success');
 }
 
+// ===================== TAB NAVIGATION =====================
+
+function switchTab(tab) {
+  // Update buttons
+  document.getElementById('tabOverview').classList.toggle('active', tab === 'overview');
+  document.getElementById('tabPeaks').classList.toggle('active', tab === 'peaks');
+  // Update panels
+  document.getElementById('panelOverview').classList.toggle('active', tab === 'overview');
+  document.getElementById('panelPeaks').classList.toggle('active', tab === 'peaks');
+}
+
 // ===================== DATA LOADING =====================
 
 async function loadData(startDate, endDate) {
+  // Load filtered data
   let query = supabase
     .from('ReportAutoPrint')
     .select('*')
@@ -492,6 +561,9 @@ async function loadData(startDate, endDate) {
   lastRecords = data;
   document.getElementById('btnExport').style.display = 'block';
   render(data, startDate, endDate);
+  
+  // Load yearly data for peak calculation (current natural year)
+  loadYearlyPeaks();
 }
 
 function getISOWeek(date) {
@@ -635,7 +707,7 @@ function renderCharts(grouped) {
   // Highlight colors for peak bar
   const successColors = keys.map((_, i) => i === peakIdx ? '#059669' : '#10b981');
   const failColors = keys.map((_, i) => i === peakIdx ? '#dc2626' : '#ef4444');
-  const skipColors = keys.map((_, i) => i === peakIdx ? '#d97706' : '#f59e0b');
+  const skipColors = keys.map((_, i) => i === peakIdx ? '#60a5fa' : '#93c5fd');
 
   // Destroy existing charts
   if (charts.trend) charts.trend.destroy();
@@ -687,6 +759,153 @@ function renderFailTable(grouped) {
   });
   if (!rows) rows = '<tr><td colspan="5" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
   document.getElementById('failTableContainer').innerHTML = `<table class="fail-table"><tr><th>执行时间</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>${rows}</table>`;
+}
+
+// ===================== YEARLY PEAKS =====================
+
+async function loadYearlyPeaks() {
+  const now = new Date();
+  const yearStart = `${now.getFullYear()}-01-01T00:00:00`;
+  const yearEnd = `${now.getFullYear()}-12-31T23:59:59`;
+  
+  // Set year label
+  document.getElementById('peakYearLabel').textContent = now.getFullYear() + '年';
+  
+  const { data, error } = await supabase
+    .from('ReportAutoPrint')
+    .select('*')
+    .gte('执行时间', yearStart)
+    .lte('执行时间', yearEnd)
+    .order('执行时间', { ascending: true });
+  
+  if (error || !data || data.length === 0) {
+    document.getElementById('peaksEmptyState').style.display = 'block';
+    // Hide the peak cards area
+    document.querySelectorAll('#panelPeaks > h3, #panelPeaks > p, #panelPeaks > div[style*="grid"]').forEach(el => el.style.display = 'none');
+    return;
+  }
+  
+  document.getElementById('peaksEmptyState').style.display = 'none';
+  document.querySelectorAll('#panelPeaks > h3, #panelPeaks > p, #panelPeaks > div[style*="grid"], #panelPeaks > div[style*="background: white"]').forEach(el => el.style.display = '');
+  
+  const peaks = calculateYearlyPeaks(data);
+  renderYearlyPeaks(peaks, data);
+}
+
+function calculateYearlyPeaks(records) {
+  // Group by day
+  const byDay = {};
+  // Group by week
+  const byWeek = {};
+  // Group by month
+  const byMonth = {};
+  
+  records.forEach(r => {
+    if (!r['执行时间']) return;
+    const date = new Date(r['执行时间']);
+    const dayKey = date.toISOString().slice(0, 10);
+    const weekKey = `${date.getFullYear()}-W${String(getISOWeek(date)).padStart(2, '0')}`;
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    
+    if (!byDay[dayKey]) byDay[dayKey] = 0;
+    if (!byWeek[weekKey]) byWeek[weekKey] = 0;
+    if (!byMonth[monthKey]) byMonth[monthKey] = 0;
+    
+    byDay[dayKey] += r['总数'] || 0;
+    byWeek[weekKey] += r['总数'] || 0;
+    byMonth[monthKey] += r['总数'] || 0;
+  });
+  
+  // Find peaks
+  let peakDay = { key: '--', total: 0 };
+  let peakWeek = { key: '--', total: 0 };
+  let peakMonth = { key: '--', total: 0 };
+  
+  Object.keys(byDay).forEach(k => {
+    if (byDay[k] > peakDay.total) {
+      peakDay = { key: k, total: byDay[k] };
+    }
+  });
+  
+  Object.keys(byWeek).forEach(k => {
+    if (byWeek[k] > peakWeek.total) {
+      peakWeek = { key: k, total: byWeek[k] };
+    }
+  });
+  
+  Object.keys(byMonth).forEach(k => {
+    if (byMonth[k] > peakMonth.total) {
+      peakMonth = { key: k, total: byMonth[k] };
+    }
+  });
+  
+  return { peakDay, peakWeek, peakMonth, byMonth };
+}
+
+function renderYearlyPeaks(peaks, allRecords) {
+  // Day
+  document.getElementById('peakDayValue').textContent = peaks.peakDay.total.toLocaleString();
+  document.getElementById('peakDayDate').textContent = formatDateCN(peaks.peakDay.key);
+  
+  // Week
+  document.getElementById('peakWeekValue').textContent = peaks.peakWeek.total.toLocaleString();
+  document.getElementById('peakWeekDate').textContent = `第 ${peaks.peakWeek.key.split('-W')[1]} 周`;
+  
+  // Month
+  const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+  const monthNum = parseInt(peaks.peakMonth.key.split('-')[1]) - 1;
+  document.getElementById('peakMonthValue').textContent = peaks.peakMonth.total.toLocaleString();
+  document.getElementById('peakMonthDate').textContent = `${peaks.peakMonth.key.split('-')[0]}年 ${monthNames[monthNum]}`;
+
+  // Render monthly distribution chart
+  renderPeakMonthlyChart(peaks.byMonth);
+}
+
+function formatDateCN(dateStr) {
+  if (!dateStr || dateStr === '--') return '暂无数据';
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+function renderPeakMonthlyChart(byMonth) {
+  const months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+  const monthLabels = months.map(m => m + '月');
+  const values = months.map(m => byMonth[new Date().getFullYear() + '-' + m] || 0);
+
+  // Destroy existing chart
+  if (charts.peakMonthly) charts.peakMonthly.destroy();
+
+  const maxVal = Math.max(...values);
+  const barColors = values.map(v => v === maxVal && v > 0 ? '#002FA7' : '#93c5fd');
+
+  charts.peakMonthly = new Chart(document.getElementById('chartPeakMonthly'), {
+    type: 'bar',
+    data: {
+      labels: monthLabels,
+      datasets: [{
+        label: '打印总量',
+        data: values,
+        backgroundColor: barColors,
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (ctx) => `打印量: ${ctx.raw.toLocaleString()} 次`
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
 }
 
 // ===================== KPI ANIMATION =====================
