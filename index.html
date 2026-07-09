@@ -193,6 +193,7 @@
   <div class="tab-nav">
     <button class="tab-btn active" id="tabOverview" onclick="switchTab('overview')">📊 数据概览</button>
     <button class="tab-btn" id="tabPeaks" onclick="switchTab('peaks')">📅 年度负载高峰</button>
+    <button class="tab-btn" id="tabVersions" onclick="switchTab('versions')">📋 版本记录</button>
   </div>
 
   <!-- Tab: Overview (default) -->
@@ -264,6 +265,18 @@
     </div>
   </div><!-- /panelPeaks -->
 
+  <!-- Tab: Version Record -->
+  <div class="tab-panel" id="panelVersions" style="padding: 24px 32px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <h3 style="font-size:16px; font-weight:600; color:#1e293b;">📋 应用版本发布记录</h3>
+      <button id="btnAddVersion" style="display:none; padding:8px 16px; border:none; background:#002FA7; color:#fff; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;" onclick="openVersionModal()">➕ 记录新版本</button>
+    </div>
+    <p style="font-size:13px; color:#64748b; margin-bottom:24px; line-height:1.6;">
+      记录每次发布的版本号、日期与变更摘要，便于团队追溯。数据来源：Supabase <code>app_versions</code> 表。
+    </p>
+    <div id="versionsList"><div class="loading">正在加载版本记录...</div></div>
+  </div><!-- /panelVersions -->
+
 </div>
 
 <!-- User Management Page -->
@@ -288,6 +301,25 @@
 
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
+
+<!-- Version Add Modal -->
+<div id="versionModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.5); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this) closeVersionModal()">
+  <div style="background:#fff; border-radius:16px; padding:28px; width:460px; max-width:92vw; box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+    <h3 style="margin-bottom:18px; color:#002FA7; font-size:17px;">➕ 记录新版本发布</h3>
+    <label style="display:block; font-size:13px; color:#475569; margin-bottom:6px;">版本号（如 1.3.0）</label>
+    <input id="vmVersion" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:14px; font-size:14px;" placeholder="1.3.0" />
+    <label style="display:block; font-size:13px; color:#475569; margin-bottom:6px;">发布日期</label>
+    <input id="vmReleased" type="datetime-local" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:14px; font-size:14px;" />
+    <label style="display:block; font-size:13px; color:#475569; margin-bottom:6px;">变更摘要</label>
+    <textarea id="vmSummary" rows="4" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:14px; font-size:14px; resize:vertical;" placeholder="本次发布的主要变更..."></textarea>
+    <label style="display:block; font-size:13px; color:#475569; margin-bottom:6px;">commit hash（可选）</label>
+    <input id="vmCommit" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:18px; font-size:14px;" placeholder="如 a920631" />
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button onclick="closeVersionModal()" style="padding:9px 18px; border:1px solid #cbd5e1; background:#fff; border-radius:8px; cursor:pointer; font-size:14px; color:#475569;">取消</button>
+      <button id="vmSaveBtn" onclick="submitVersion()" style="padding:9px 18px; border:none; background:#002FA7; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">保存</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const SUPABASE_URL = 'https://uvqjtvonxwsmhntnyest.supabase.co';
@@ -339,6 +371,7 @@ async function checkApproval(user) {
   // Check if admin
   if (currentUserData.role === 'admin') {
     document.getElementById('btnManage').style.display = 'block';
+    document.getElementById('btnAddVersion').style.display = 'inline-block';
   }
   
   showDashboard(user);
@@ -523,9 +556,113 @@ function switchTab(tab) {
   // Update buttons
   document.getElementById('tabOverview').classList.toggle('active', tab === 'overview');
   document.getElementById('tabPeaks').classList.toggle('active', tab === 'peaks');
+  document.getElementById('tabVersions').classList.toggle('active', tab === 'versions');
   // Update panels
   document.getElementById('panelOverview').classList.toggle('active', tab === 'overview');
   document.getElementById('panelPeaks').classList.toggle('active', tab === 'peaks');
+  document.getElementById('panelVersions').classList.toggle('active', tab === 'versions');
+  // Lazy-load versions on first open
+  if (tab === 'versions' && !versionsLoaded) loadVersions();
+}
+
+// ===================== VERSION RECORD (Tab) =====================
+let versionsLoaded = false;
+
+async function loadVersions() {
+  const container = document.getElementById('versionsList');
+  container.innerHTML = '<div class="loading">正在加载版本记录...</div>';
+  try {
+    const { data, error } = await supabase
+      .from('app_versions')
+      .select('*')
+      .order('released_at', { ascending: false });
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#94a3b8;"><div style="font-size:48px;margin-bottom:12px;">📭</div><div style="font-size:15px;font-weight:600;">暂无版本记录</div><div style="font-size:13px;margin-top:4px;">在 Supabase 的 app_versions 表插入记录后此处自动显示</div></div>';
+      versionsLoaded = true;
+      return;
+    }
+    container.innerHTML = renderVersionsTimeline(data);
+    versionsLoaded = true;
+  } catch (e) {
+    console.error('加载版本记录失败:', e);
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:#ef4444;">⚠️ 版本记录加载失败：' + escapeHtml(e.message || String(e)) + '<br><span style="font-size:12px;color:#94a3b8;">请确认 Supabase 已创建 app_versions 表并启用 RLS 读取策略</span></div>';
+  }
+}
+
+function renderVersionsTimeline(rows) {
+  const items = rows.map((r, i) => {
+    const latest = i === 0;
+    const color = latest ? '#002FA7' : '#00C3FF';
+    const dark = latest ? '#002FA7' : '#001D70';
+    return `
+      <div style="position:relative; padding:0 0 28px 36px; border-left:2px solid ${latest ? '#002FA7' : '#e2e8f0'}; margin-left:8px;">
+        <span style="position:absolute; left:-9px; top:4px; width:16px; height:16px; border-radius:50%; background:${color}; border:3px solid #fff; box-shadow:0 0 0 2px ${color};"></span>
+        <div style="background:#fff; border-radius:14px; padding:20px 24px; box-shadow:0 2px 12px rgba(0,0,0,0.08); border-top:4px solid ${color};">
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+            <span style="font-size:20px; font-weight:800; color:${dark};">v${escapeHtml(r.version)}</span>
+            ${latest ? '<span style="font-size:12px; font-weight:600; color:#fff; background:#002FA7; padding:2px 10px; border-radius:999px;">最新</span>' : ''}
+            <span style="font-size:13px; color:#64748b;">🗓️ ${formatDate(r.released_at)}</span>
+          </div>
+          <div style="font-size:14px; color:#334155; line-height:1.7;">${escapeHtml(r.changes_summary)}</div>
+          <div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:#94a3b8;">
+            ${r.commit_hash ? '<span>🔗 commit: <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;">' + escapeHtml(r.commit_hash) + '</code></span>' : ''}
+            ${r.deployed_by ? '<span>👤 ' + escapeHtml(r.deployed_by) + '</span>' : ''}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  return '<div style="max-width:760px;">' + items + '</div>';
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function openVersionModal() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('vmReleased').value = local;
+  document.getElementById('vmVersion').value = '';
+  document.getElementById('vmSummary').value = '';
+  document.getElementById('vmCommit').value = '';
+  document.getElementById('versionModal').style.display = 'flex';
+}
+
+function closeVersionModal() {
+  document.getElementById('versionModal').style.display = 'none';
+}
+
+async function submitVersion() {
+  const version = document.getElementById('vmVersion').value.trim();
+  const summary = document.getElementById('vmSummary').value.trim();
+  const commit = document.getElementById('vmCommit').value.trim();
+  const releasedLocal = document.getElementById('vmReleased').value;
+  if (!version || !summary) { showToast('⚠️ 版本号与变更摘要必填', 'error'); return; }
+  const released_at = releasedLocal ? new Date(releasedLocal).toISOString() : null;
+  const btn = document.getElementById('vmSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中...';
+  try {
+    const { error } = await supabase
+      .from('app_versions')
+      .insert({ version, changes_summary: summary, commit_hash: commit || null, released_at, deployed_by: currentUser ? currentUser.email : null });
+    if (error) throw error;
+    closeVersionModal();
+    versionsLoaded = false;
+    showToast('✅ 版本 v' + version + ' 已记录', 'success');
+    loadVersions();
+  } catch (e) {
+    console.error(e);
+    showToast('⚠️ 保存失败：' + (e.message || e), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '保存';
+  }
 }
 
 // ===================== DATA LOADING =====================
