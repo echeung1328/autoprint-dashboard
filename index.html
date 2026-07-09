@@ -18,6 +18,8 @@
   .btn-logout:hover { background: rgba(255,255,255,0.35); }
   .btn-manage { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
   .btn-manage:hover { background: rgba(255,255,255,0.35); }
+  .version-badge { display: inline-block; background: rgba(255,255,255,0.22); color: #fff; font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 12px; margin-left: 10px; vertical-align: middle; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.35); cursor: default; transition: background 0.2s; }
+  .version-badge:hover { background: rgba(255,255,255,0.32); }
 
   /* Login Page */
   #loginPage { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #002FA7 0%, #00C3FF 100%); }
@@ -161,7 +163,7 @@
 <div id="dashboardPage">
   <div class="header">
     <div>
-      <h1>🖨️ AutoPrint 自动打印执行报告</h1>
+      <h1>🖨️ AutoPrint 自动打印执行报告<span class="version-badge" id="headerVersion">v1.2.0</span></h1>
       <p id="reportPeriod">加载中...</p>
     </div>
     <div class="header-right">
@@ -397,7 +399,21 @@ function showDashboard(user) {
   document.getElementById('dashboardPage').style.display = 'block';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('userEmail').textContent = user.email || '';
+  loadHeaderVersion();
   loadData();
+}
+
+async function loadHeaderVersion() {
+  try {
+    const { data, error } = await supabase
+      .from('app_versions')
+      .select('version')
+      .order('released_at', { ascending: false })
+      .limit(1);
+    if (!error && data && data.length > 0) {
+      document.getElementById('headerVersion').textContent = 'v' + data[0].version;
+    }
+  } catch (e) { /* fallback: keep default v1.2.0 from HTML */ }
 }
 
 function showUserManage() {
