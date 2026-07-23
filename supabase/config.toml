@@ -1,0 +1,9 @@
+# Supabase CLI 配置（最小集，仅供 Edge Function 部署使用）
+project_id = "uvqjtvonxwsmhntnyest"
+
+[api]
+enabled = true
+port = 54321
+
+[edge_runtime]
+enabled = true
