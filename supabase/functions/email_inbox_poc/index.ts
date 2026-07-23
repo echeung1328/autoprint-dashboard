@@ -42,6 +42,9 @@ checkEnv();
 // ---------- Basic Auth 校验（Webhook Relay Destination 侧配置） ----------
 function verifyBasicAuth(headers: Headers): boolean {
   const auth = headers.get("authorization");
+  // [diag] 打印实际收到的 Authorization 头（值可能被截断到前 80 字符），便于定位 Basic auth 是否真生效
+  const authShort = auth ? auth.slice(0, 80) : "(none)";
+  console.log(`[diag] authorization header: "${authShort}" (length=${auth?.length || 0})`);
   if (!auth || !auth.toLowerCase().startsWith("basic ")) {
     console.log("[auth] missing or non-basic authorization header");
     return false;
@@ -50,7 +53,9 @@ function verifyBasicAuth(headers: Headers): boolean {
   const expected = btoa(`${BASIC_USER}:${BASIC_PASS}`);
   const provided = auth.slice(6).trim();
   const ok = provided === expected;
-  if (!ok) console.log("[auth] basic auth mismatch");
+  if (!ok) {
+    console.log(`[auth] basic auth mismatch. provided="${provided.slice(0, 40)}..." expected="${expected.slice(0, 40)}..."`);
+  }
   return ok;
 }
 
@@ -96,6 +101,8 @@ async function insertRows(rows: any[]) {
 }
 
 Deno.serve(async (req: Request) => {
+  // [diag] 记录请求方法和 URL，便于确认 Webhook Relay 是不是按预期打了 POST
+  console.log(`[diag] method=${req.method} url=${req.url}`);
   const rawBody = await req.text();
 
   // 1) Basic Auth 校验失败 -> 401 拒绝（防伪造请求）
