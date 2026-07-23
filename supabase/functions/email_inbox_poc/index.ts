@@ -12,7 +12,8 @@
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// POC 使用 anon key（配合 email_inbox_poc 表关闭 RLS 即可写入）。正式版应改用 service_role + 开启 RLS。
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const BASIC_USER = Deno.env.get("WEBHOOK_BASIC_USER")!;
 const BASIC_PASS = Deno.env.get("WEBHOOK_BASIC_PASS")!;
 const ALLOWED_SENDERS = (Deno.env.get("ALLOWED_SENDERS") || "")
@@ -63,8 +64,8 @@ async function insertRows(rows: any[]) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/email_inbox_poc`, {
     method: "POST",
     headers: {
-      apikey: SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${ANON_KEY}`,
       "Content-Type": "application/json",
       Prefer: "return=minimal",
     },
