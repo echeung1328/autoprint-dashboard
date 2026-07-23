@@ -7,19 +7,37 @@
 // ⚠️ POC 范围：仅验证「发邮件即入库」链路是否跑通。
 //    不实现 SOP 数据质量铁律（复合键去重/冲突检测/+08:00/生成列/CreatedBy），
 //    那些在正式版用代码重写。本函数签收即返回 200，异常仅记入 DB（status=error）。
+//
+// ⚠️ 环境变量名注意：Supabase CLI v2.109+ 禁止设置以 SUPABASE_ 开头的环境变量
+//    （护栏，防止覆盖 SUPABASE_ACCESS_TOKEN 等 CLI 内部变量），所以用 PROJECT_ 前缀。
 
 // @ts-nocheck
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-// POC 使用 anon key（配合 email_inbox_poc 表关闭 RLS 即可写入）。正式版应改用 service_role + 开启 RLS。
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-const BASIC_USER = Deno.env.get("WEBHOOK_BASIC_USER")!;
-const BASIC_PASS = Deno.env.get("WEBHOOK_BASIC_PASS")!;
+const PROJECT_URL = Deno.env.get("PROJECT_URL");
+const ANON_KEY = Deno.env.get("PROJECT_ANON_KEY");
+const BASIC_USER = Deno.env.get("WEBHOOK_BASIC_USER");
+const BASIC_PASS = Deno.env.get("WEBHOOK_BASIC_PASS");
 const ALLOWED_SENDERS = (Deno.env.get("ALLOWED_SENDERS") || "")
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+
+// 启动期空值检查（缺一个就 500，方便部署后第一时间发现问题）
+function checkEnv() {
+  const missing = [
+    ["PROJECT_URL", PROJECT_URL],
+    ["PROJECT_ANON_KEY", ANON_KEY],
+    ["WEBHOOK_BASIC_USER", BASIC_USER],
+    ["WEBHOOK_BASIC_PASS", BASIC_PASS],
+  ]
+    .filter(([_, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length) {
+    throw new Error("missing env vars: " + missing.join(", "));
+  }
+}
+checkEnv();
 
 // ---------- Basic Auth 校验（Webhook Relay Destination 侧配置） ----------
 function verifyBasicAuth(headers: Headers): boolean {
@@ -61,7 +79,7 @@ function parseAttachment(filename: string, contentType: string, base64: string):
 
 // ---------- 写入 Supabase ----------
 async function insertRows(rows: any[]) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/email_inbox_poc`, {
+  const res = await fetch(`${PROJECT_URL}/rest/v1/email_inbox_poc`, {
     method: "POST",
     headers: {
       apikey: ANON_KEY,
