@@ -1,7 +1,7 @@
 // Edge Function: email_inbox_poc v10 (formal pipeline)
 // - Basic Auth gate + whitelist (same as POC)
 // - service_role write to report_autoprint_staging (SOP cleaning applied)
-// - raw archive to email_inbox_poc (POC table, RLS off)
+// - raw archive to email_inbox_poc (RLS ON; only service_role can write, approved users can read)
 //
 // Direction B key changes vs POC:
 //   1. anon key -> SUPABASE_SERVICE_ROLE_KEY (bypass RLS on ReportAutoPrint/staging)
