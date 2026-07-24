@@ -179,8 +179,14 @@ function parseCsv(text: string): string[][] {
 }
 
 // ---- xlsx loader (dynamic + resilient to CDN reachability) ----
+// xlsx 0.20.x is SheetJS Pro (not freely mirrored); use community 0.18.5.
 async function loadXlsx(): Promise<any> {
-  const urls = ['https://esm.sh/xlsx@0.20.3', 'https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs'];
+  const urls = [
+    'https://esm.sh/xlsx@0.18.5',
+    'https://esm.sh/xlsx',
+    'https://cdn.sheetjs.com/xlsx-0.18.5/package/xlsx.mjs',
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mjs'
+  ];
   let last: any = null;
   for (const u of urls) {
     try {
@@ -313,6 +319,7 @@ Deno.serve(async (req) => {
 
   const batchTag = 'EMAIL_' + new Date().toISOString().slice(0, 7).replace('-', '');
   const stagingRows: any[] = [];
+  const parseErrors: string[] = [];
 
   for (const a of atts) {
     let matrix: string[][];
@@ -327,6 +334,8 @@ Deno.serve(async (req) => {
         matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
       }
     } catch (e) {
+      const msg = (a.name || 'attachment') + ': ' + e.message;
+      parseErrors.push(msg);
       try {
         await restInsert('email_inbox_poc', [
           Object.assign({}, base, {
@@ -391,6 +400,9 @@ Deno.serve(async (req) => {
     } catch (e) {
       return new Response('STAGE_FAIL ' + e.message, E500);
     }
+  }
+  if (parseErrors.length > 0) {
+    return new Response('ok-no-rows; parse-errors: ' + parseErrors.join(' | '), E500);
   }
   return new Response('ok-no-rows', OK);
 });
