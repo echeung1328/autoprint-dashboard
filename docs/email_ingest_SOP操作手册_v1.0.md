@@ -82,7 +82,7 @@ FROM "ReportAutoPrint" ORDER BY "执行时间" DESC LIMIT 5;
 ## 4. 后续迭代建议（Best Practice）
 
 1. **附件格式校验增强**：当前仅按扩展名/Content-Type 粗筛，建议加 MIME 校验与「空附件/损坏文件」明确报错。
-2. **失败可观测**：把关键错误同时写一张诊断表（或复用 `email_inbox_poc` 的 `error_msg`），非技术用户可在 Supabase Dashboard 直接看，无需盯 Webhook Relay。
+2. **失败可观测**：把关键错误同时写一张诊断表（或复用 `email_raw_archive` 的 `error_msg`），非技术用户可在 Supabase Dashboard 直接看，无需盯 Webhook Relay。
 3. **监控告警**：对 `ok-no-rows`（连续无数据）、`STAGE_FAIL`、白名单拒绝做阈值告警（如 Teams webhook）。
 4. **批次管理视图**：提供一个 SQL 视图，列出各 `batch_tag` 的 pending/promoted 状态与条数，方便批量确认转正。
 5. **多收件地址/多表**：若未来不同邮件对应不同目标表，建议用「收件地址 → 目标表」映射配置，而非硬编码。

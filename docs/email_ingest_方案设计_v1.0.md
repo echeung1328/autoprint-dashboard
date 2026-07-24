@@ -7,7 +7,7 @@
 
 ## 1. 背景与目标
 
-- **POC（Issue #24）** 已完成最小验证：邮件能到达、Edge Function 能跑、数据能入库（`email_inbox_poc` 表已验证 2 行）。
+- **POC（Issue #24）** 已完成最小验证：邮件能到达、Edge Function 能跑、数据能入库（原始归档表 `email_raw_archive`，POC 时期曾名 `email_inbox_poc`，已验证 2 行）。
 - **正式版（Issue #25，方向 B）** 目标：把 POC 升级为**生产可用**管道，满足四项要求：
   1. **安全**：写库身份合规、密钥不落地代码/文档；
   2. **可审计**：每一批数据有批次标签、可追述来源；
@@ -34,7 +34,7 @@ Supabase Edge Function：email_inbox_poc（v10）
    │      · 双语列映射  · 时间戳统一 +08:00
    │      · 复合键(Title+执行时间)去重  · 冲突检测 INSERT/UPDATE
    │  ⑤ 清洗后落 report_autoprint_staging（status=pending，带 conflict_action 标记）
-   │  ⑥ 原始 base64 归档 email_inbox_poc（保留，不删，用于排错/重放）
+   │  ⑥ 原始 base64 归档 email_raw_archive（保留，不删，用于排错/重放）
    ▼
 report_autoprint_staging（待人工确认）
    │  用户确认后 → AI 执行 supabase/promote_staging.sql
@@ -63,8 +63,8 @@ ReportAutoPrint（主表，生成列「耗时分钟」由库自动算）
 - `status` 取值：`pending`（待转正）／ `promoted`（已转正）／ `error`。
 - 索引：`(Title, 执行时间)` 复合键；`status`。
 
-### 3.4 表 `email_inbox_poc`（原始归档，POC 延续）
-- **RLS 关闭**（POC 专用），仅存原始投递元数据与 base64 附件，用于排错与重放。
+### 3.4 表 `email_raw_archive`（原始归档，POC 延续）
+- **RLS 已启用**（仅 service_role 可写、approved 用户可读），仅存原始投递元数据与 base64 附件，用于排错与重放。
 - 字段：`from_email` / `subject` / `filename` / `content_type` / `raw_base64` / `row_count` / `status` / `error_msg` / `received_at`。
 
 ### 3.5 表 `ReportAutoPrint`（主表，最终数据）
