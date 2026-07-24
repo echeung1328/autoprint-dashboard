@@ -224,8 +224,8 @@ function cleanMatrix(matrix: string[][], from: string, filename: string, batchTa
         rec[db] = val;
       }
     }
-    // junk filter (SOP §5.3.4)
-    if (!title || /^autoprint-/i.test(title) || title === '执行时间' || title === '完成时间') continue;
+    // junk filter (SOP §5.3.4): skip empty rows or rows that literally are column names
+    if (!title || title === '执行时间' || title === '完成时间') continue;
     rec.Title = title;
     rec['执行时间'] = execTime;
     rec['完成时间'] = doneTime;
