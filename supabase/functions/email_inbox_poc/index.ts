@@ -1,7 +1,7 @@
 // Edge Function: email_inbox_poc v10 (formal pipeline)
 // - Basic Auth gate + whitelist (same as POC)
 // - service_role write to report_autoprint_staging (SOP cleaning applied)
-// - raw archive to email_inbox_poc (RLS ON; only service_role can write, approved users can read)
+// - raw archive to email_raw_archive (RLS ON; only service_role can write, approved users can read)
 //
 // Direction B key changes vs POC:
 //   1. anon key -> SUPABASE_SERVICE_ROLE_KEY (bypass RLS on ReportAutoPrint/staging)
@@ -279,9 +279,9 @@ Deno.serve(async (req) => {
     (a: any) => /(excel|spreadsheet|ms-excel|csv|sheet)/i.test(a.content_type || '') || /\.(xlsx|xls|csv)$/i.test(a.name || '')
   );
 
-  // archive raw meta to email_inbox_poc
+  // archive raw meta to email_raw_archive
   try {
-    await restInsert('email_inbox_poc', [
+    await restInsert('email_raw_archive', [
       Object.assign({}, base, {
         filename: '(meta)',
         content_type: 'text/plain',
@@ -318,7 +318,7 @@ Deno.serve(async (req) => {
       const msg = (a.name || 'attachment') + ': ' + e.message;
       parseErrors.push(msg);
       try {
-        await restInsert('email_inbox_poc', [
+        await restInsert('email_raw_archive', [
           Object.assign({}, base, {
             filename: a.name,
             content_type: a.content_type,
@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
 
     // archive raw attachment
     try {
-      await restInsert('email_inbox_poc', [
+      await restInsert('email_raw_archive', [
         Object.assign({}, base, {
           filename: a.name,
           content_type: a.content_type,
