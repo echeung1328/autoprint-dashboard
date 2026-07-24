@@ -8,6 +8,8 @@
 //   2. parse xlsx/csv attachments, apply SOP data-quality rules
 //   3. land cleaned rows into report_autoprint_staging (human confirms promotion later)
 
+import * as XLSX from './xlsx.mjs';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
 const BU = Deno.env.get('WEBHOOK_BASIC_USER') || 'poc';
@@ -178,26 +180,6 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-// ---- xlsx loader (dynamic + resilient to CDN reachability) ----
-// xlsx 0.20.x is SheetJS Pro (not freely mirrored); use community 0.18.5.
-async function loadXlsx(): Promise<any> {
-  const urls = [
-    'https://esm.sh/xlsx@0.18.5',
-    'https://esm.sh/xlsx',
-    'https://cdn.sheetjs.com/xlsx-0.18.5/package/xlsx.mjs',
-    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mjs'
-  ];
-  let last: any = null;
-  for (const u of urls) {
-    try {
-      return await import(u);
-    } catch (e) {
-      last = e;
-    }
-  }
-  throw last;
-}
-
 // ---- clean a parsed matrix into staging records (SOP rules) ----
 function cleanMatrix(matrix: string[][], from: string, filename: string, batchTag: string): any[] {
   if (!matrix || matrix.length < 2) return [];
@@ -327,7 +309,6 @@ Deno.serve(async (req) => {
       if (/\.csv$/i.test(a.name || '') || /csv/.test(a.content_type || '')) {
         matrix = parseCsv(atob(a.content));
       } else {
-        const XLSX = await loadXlsx();
         const buf = Uint8Array.from(atob(a.content), (c) => c.charCodeAt(0));
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
