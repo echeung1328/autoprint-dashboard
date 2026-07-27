@@ -1,6 +1,6 @@
 # 邮件 → Supabase 入库 方案设计（方向 B 正式版）
 
-> 版本：v1.0 ｜ 最后更新：2026-07-24 ｜ 维护人：Eric Zhang
+> 版本：v1.0 ｜ 最后更新：2026-07-27 ｜ 维护人：Eric Zhang
 > 关联 Issue：#24（POC，Done）／ #25（正式版，Done）
 
 ---
@@ -19,11 +19,25 @@
 
 ## 2. 总体架构（数据流向）
 
+主链路由 5 个环节串联；Resend 告警为 Edge Function 内部的「失败告警旁路」，不参与主数据流，仅在解析失败或写入 staging 失败时触发。
+
+### 2.1 主链路组件（技术组件 + 配置项）
+
+| 环节 | 组件（技术组件 + 配置项） | 关键配置项 / Secrets | 作用 |
+|------|--------------------------|----------------------|------|
+| ① 入站 | 邮件客户端 / 企业邮箱（白名单邮箱 `zhang.hz@comlan.com`） | `ALLOWED_SENDERS`（Edge Function 内白名单） | 发送带 xlsx/csv 附件的邮件 |
+| ② 收件转发 | Webhook Relay（邮件 inbound endpoint） | `WEBHOOK_RELAY_ADDRESS`、`WEBHOOK_BASIC_USER`、`WEBHOOK_BASIC_PASS` | 接收邮件并转成 HTTP POST，附带 Basic Auth |
+| ③ 解析入库 | Supabase（Edge Function `email_inbox_poc` v10） | `SUPABASE_SERVICE_ROLE_KEY`、`RESEND_API_KEY`、`ALERT_EMAIL_TO`、`INGEST_ALERT_WEBHOOK` | 鉴权、解析附件、应用 SOP 铁律，写入 staging 与原始归档 |
+| ④ 人工闸 | Supabase（Postgres 表 `report_autoprint_staging`） | `status`、`conflict_action`、`batch_tag` 字段 | 暂存待确认数据，status=pending |
+| ⑤ 终表 | Supabase（Postgres 主表 `ReportAutoPrint`） | RLS 策略、`GENERATED ALWAYS` 耗时分钟列 | 最终业务数据表，转正后写入 |
+
+### 2.2 数据流向图
+
 ```
-白名单邮箱  <ALLOWED_SENDERS>
+邮件客户端 / 企业邮箱（白名单 zhang.hz@comlan.com）
    │  发邮件（带 xlsx / csv 附件）
    ▼
-Webhook Relay 收件地址  <WEBHOOK_RELAY_ADDRESS>
+Webhook Relay（邮件 inbound endpoint）
    │  HTTP POST（携带 Basic Auth 头）
    ▼
 Supabase Edge Function：email_inbox_poc（v10）
@@ -40,7 +54,21 @@ report_autoprint_staging（待人工确认）
    │  用户确认后 → AI 执行 supabase/promote_staging.sql
    ▼
 ReportAutoPrint（主表，生成列「耗时分钟」由库自动算）
+
+─── 失败告警旁路（不参与主数据流）───
+Edge Function 解析失败 / 写入 staging 失败时
+   └─► sendAlert() ─► Resend（邮件 API，Secret RESEND_API_KEY + ALERT_EMAIL_TO）
+                         └─► 接收告警邮箱（如 zhang.hz@comlan.com）
+   注：Secret 未配置则静默跳过，不影响主链路；也可用 INGEST_ALERT_WEBHOOK 兜底。
 ```
+
+### 2.3 Resend 告警旁路说明
+
+Resend 位于 ③ Edge Function 内部，是「失败警示灯」而非独立环节：
+- **触发点**：仅当 ③ 发生异常时调用——解析失败（附件损坏、非 xlsx/csv）或写入 staging 失败。
+- **动作**：函数内 `sendAlert()` 通过 HTTPS 调 Resend API，发告警邮件到 `ALERT_EMAIL_TO`。
+- **配置驱动（零代码）**：密钥 `RESEND_API_KEY` / `ALERT_EMAIL_TO`（可选 `ALERT_EMAIL_FROM`）存为 Supabase Secret，不进代码与仓库；未配置则静默跳过，完全不影响主链路。
+- **为何走 Resend 而非原始 SMTP**：Supabase Edge 运行时仅允许 HTTPS 出网，无法发送原始 SMTP 邮件，Resend 是走 HTTPS 的标准邮件 API。
 
 ---
 
