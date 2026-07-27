@@ -23,6 +23,41 @@ const E401 = { status: 401 };
 const E400 = { status: 400 };
 const E500 = { status: 500 };
 
+// ---- failure alerting (config-driven; never blocks the main flow) ----
+// Email path: set Supabase Secrets RESEND_API_KEY + ALERT_EMAIL_TO (optional ALERT_EMAIL_FROM).
+// Generic path: set INGEST_ALERT_WEBHOOK to any HTTPS endpoint (e.g. an email-bridge).
+// If neither is configured, alerts are silently skipped (no error).
+// Note: Supabase Edge runtime only allows HTTPS egress, so raw SMTP is not used here.
+async function sendAlert(kind: string, detail: string) {
+  try {
+    const to = Deno.env.get('ALERT_EMAIL_TO');
+    const key = Deno.env.get('RESEND_API_KEY');
+    if (to && key) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: Deno.env.get('ALERT_EMAIL_FROM') || 'autoprint-alerts@resend.dev',
+          to: [to],
+          subject: '[AutoPrint 入库告警] ' + kind,
+          text: detail + '\n\n时间: ' + new Date().toISOString()
+        })
+      });
+      return;
+    }
+    const wh = Deno.env.get('INGEST_ALERT_WEBHOOK');
+    if (wh) {
+      await fetch(wh, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, detail, at: new Date().toISOString() })
+      });
+    }
+  } catch (e) {
+    console.log('alert-send-fail', e && e.message);
+  }
+}
+
 function checkEnv() {
   const missing = [['SUPABASE_URL', SUPABASE_URL], ['SERVICE_ROLE', SERVICE_ROLE], ['BU', BU], ['BP', BP]]
     .filter(([_, v]) => !v)
@@ -381,10 +416,12 @@ Deno.serve(async (req) => {
       const updates = stagingRows.filter((r) => r.conflict_action === 'update').length;
       return new Response('ok-staged-' + stagingRows.length + ' (update=' + updates + ')', OK);
     } catch (e) {
+      sendAlert('写入 staging 失败', e.message);
       return new Response('STAGE_FAIL ' + e.message, E500);
     }
   }
   if (parseErrors.length > 0) {
+    sendAlert('解析失败', parseErrors.join(' | '));
     return new Response('ok-no-rows; parse-errors: ' + parseErrors.join(' | '), E500);
   }
   return new Response('ok-no-rows', OK);
