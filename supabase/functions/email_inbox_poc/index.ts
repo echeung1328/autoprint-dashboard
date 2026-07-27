@@ -9,6 +9,7 @@
 //   3. land cleaned rows into report_autoprint_staging (human confirms promotion later)
 
 import * as XLSX from './xlsx.mjs';
+import { shouldSkipTitle } from './row_filter.mjs';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
@@ -224,8 +225,9 @@ function cleanMatrix(matrix: string[][], from: string, filename: string, batchTa
         rec[db] = val;
       }
     }
-    // junk filter (SOP §5.3.4): skip empty rows or rows that literally are column names
-    if (!title || title === '执行时间' || title === '完成时间') continue;
+    // junk filter (SOP §5.3.4): skip empty rows or rows that literally are column names.
+    // Logic lives in row_filter.mjs — see row_filter.test.mjs for regression coverage (issue #26).
+    if (shouldSkipTitle(title)) continue;
     rec.Title = title;
     rec['执行时间'] = execTime;
     rec['完成时间'] = doneTime;
