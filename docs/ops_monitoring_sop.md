@@ -159,15 +159,32 @@ LIMIT 20;
 
 ```sql
 -- ① 转正：staging(pending) → 主表 ReportAutoPrint
+-- ⚠️ 重要约束说明（已实测验证）：
+--   a) 耗时分钟 是 GENERATED ALWAYS 生成列（由 完成时间-执行时间 自动计算），严禁手动插入，否则报 428C9；
+--   b) 主表 ReportAutoPrint 当前【没有】(Title,执行时间) 唯一约束，故 ON CONFLICT 不可用（报 42P10）。
+--   因此用「先 UPDATE 已存在行 + 再 INSERT 不存在行」模拟 upsert，无需改表结构。
+--
+-- 步骤 A：更新主表中已存在的同名同日行
+UPDATE "ReportAutoPrint" r
+SET 总数 = s.总数, 成功 = s.成功, 跳过 = s.跳过, 失败 = s.失败,
+    完成时间 = s.完成时间, "附件Excel表格" = s."附件Excel表格",
+    任务完成通知邮件 = s.任务完成通知邮件, 标签 = s.标签,
+    "ModifiedBy" = s."ModifiedBy", "Modified" = now()
+FROM report_autoprint_staging s
+WHERE s.status = 'pending'
+  AND r."Title" = s."Title" AND r.执行时间 = s.执行时间;
+
+-- 步骤 B：插入主表中尚不存在的同名同日行
 INSERT INTO "ReportAutoPrint"
-  ("Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 耗时分钟, 标签, "CreatedBy", "ModifiedBy")
+  ("Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 标签, "CreatedBy", "ModifiedBy")
 SELECT
-  "Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 耗时分钟, 标签, "CreatedBy", "ModifiedBy"
-FROM report_autoprint_staging
-WHERE status = 'pending'
-ON CONFLICT ("Title", 执行时间) DO UPDATE SET
-  总数 = EXCLUDED.总数, 成功 = EXCLUDED.成功, 跳过 = EXCLUDED.跳过, 失败 = EXCLUDED.失败,
-  完成时间 = EXCLUDED.完成时间, "ModifiedBy" = EXCLUDED."ModifiedBy", "Modified" = now();
+  "Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 标签, "CreatedBy", "ModifiedBy"
+FROM report_autoprint_staging s
+WHERE s.status = 'pending'
+  AND NOT EXISTS (
+    SELECT 1 FROM "ReportAutoPrint" r
+    WHERE r."Title" = s."Title" AND r.执行时间 = s.执行时间
+  );
 
 -- ② 标记已转正
 UPDATE report_autoprint_staging SET status = 'promoted' WHERE status = 'pending';
