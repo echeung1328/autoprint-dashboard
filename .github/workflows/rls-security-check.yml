@@ -22,12 +22,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'npm'
-      
-      - name: 安装依赖
-        run: npm install
-      
-      - name: 运行 RLS 安全验证
+
+      - name: 运行 RLS 安全验证（零依赖）
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -50,9 +46,8 @@ jobs:
             fi
           done
       
-      - name: 验证结果
+      - name: 验证失败处理
         if: failure()
         run: |
-          echo "::error::RLS 安全验证失败！"
-          echo "::error::请修复 RLS 无限递归或数据泄露问题后再合并。"
+          echo "::error::RLS 安全验证失败或 CI 步骤出错，请查看上方日志定位。"
           exit 1
