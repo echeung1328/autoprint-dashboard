@@ -32,7 +32,7 @@
 
 要点：
 - **临时表** `report_autoprint_staging`：每封邮件解析出的数据先放这里，`status='pending'` 表示待确认转正。
-- **主表** `ReportAutoPrint`：确认无误后的正式数据，按 `(Title + 执行时间)` 复合键去重。
+- **主表** `ReportAutoPrint`：确认无误后的正式数据，按 `("Title" + 执行时间)` 复合键去重。
 - **归档表** `email_raw_archive`：原始邮件原文落库，可重放，不丢数据。
 - **诊断表** `ingest_alert_log`：每次告警尝试都写一行（含 success / error_msg），**无需翻函数日志即可判断告警是否真发出**。
 
@@ -56,7 +56,7 @@
 
 ### 3.1 是否有卡住待转正的临时数据
 ```sql
-SELECT id, Title, 执行时间, 总数, 成功, 跳过, 失败, status, error_msg
+SELECT id, "Title", 执行时间, 总数, 成功, 跳过, 失败, status, error_msg
 FROM report_autoprint_staging
 WHERE status = 'pending'
 ORDER BY received_at DESC;
@@ -66,7 +66,7 @@ ORDER BY received_at DESC;
 
 ### 3.2 主表最近数据是否正常
 ```sql
-SELECT Title, 执行时间, 总数, 成功, 跳过, 失败, 耗时分钟, CreatedBy
+SELECT "Title", 执行时间, 总数, 成功, 跳过, 失败, 耗时分钟, "CreatedBy"
 FROM "ReportAutoPrint"
 ORDER BY 执行时间 DESC
 LIMIT 10;
@@ -155,19 +155,19 @@ LIMIT 20;
 
 ## 7. 紧急恢复：数据转正
 
-仅当 `report_autoprint_staging` 有**已确认无误**的 `pending` 数据需要写入主表时执行（建议 AI 代执行或复核）。逻辑：按 `(Title + 执行时间)` 复合键去重，已存在则更新、不存在则插入。
+仅当 `report_autoprint_staging` 有**已确认无误**的 `pending` 数据需要写入主表时执行（建议 AI 代执行或复核）。逻辑：按 `("Title" + 执行时间)` 复合键去重，已存在则更新、不存在则插入。
 
 ```sql
 -- ① 转正：staging(pending) → 主表 ReportAutoPrint
 INSERT INTO "ReportAutoPrint"
-  (Title, 执行时间, 总数, 成功, 跳过, 失败, 完成时间, 附件Excel表格, 任务完成通知邮件, 耗时分钟, 标签, CreatedBy, ModifiedBy)
+  ("Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 耗时分钟, 标签, "CreatedBy", "ModifiedBy")
 SELECT
-  Title, 执行时间, 总数, 成功, 跳过, 失败, 完成时间, 附件Excel表格, 任务完成通知邮件, 耗时分钟, 标签, CreatedBy, ModifiedBy
+  "Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 耗时分钟, 标签, "CreatedBy", "ModifiedBy"
 FROM report_autoprint_staging
 WHERE status = 'pending'
-ON CONFLICT (Title, 执行时间) DO UPDATE SET
+ON CONFLICT ("Title", 执行时间) DO UPDATE SET
   总数 = EXCLUDED.总数, 成功 = EXCLUDED.成功, 跳过 = EXCLUDED.跳过, 失败 = EXCLUDED.失败,
-  完成时间 = EXCLUDED.完成时间, ModifiedBy = EXCLUDED.ModifiedBy;
+  完成时间 = EXCLUDED.完成时间, "ModifiedBy" = EXCLUDED."ModifiedBy", "Modified" = now();
 
 -- ② 标记已转正
 UPDATE report_autoprint_staging SET status = 'promoted' WHERE status = 'pending';
@@ -205,11 +205,11 @@ UPDATE report_autoprint_staging SET status = 'promoted' WHERE status = 'pending'
 
 ```sql
 -- 1) 待转正积压
-SELECT id, Title, 执行时间, 总数, 成功, 跳过, 失败, status
+SELECT id, "Title", 执行时间, 总数, 成功, 跳过, 失败, status
 FROM report_autoprint_staging WHERE status = 'pending' ORDER BY received_at DESC;
 
 -- 2) 主表最近数据
-SELECT Title, 执行时间, 总数, 成功, 跳过, 失败, 耗时分钟, CreatedBy
+SELECT "Title", 执行时间, 总数, 成功, 跳过, 失败, 耗时分钟, "CreatedBy"
 FROM "ReportAutoPrint" ORDER BY 执行时间 DESC LIMIT 10;
 
 -- 3) 归档进账
