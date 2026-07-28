@@ -416,13 +416,25 @@ Deno.serve(async (req) => {
       const updates = stagingRows.filter((r) => r.conflict_action === 'update').length;
       return new Response('ok-staged-' + stagingRows.length + ' (update=' + updates + ')', OK);
     } catch (e) {
-      sendAlert('写入 staging 失败', e.message);
+      await sendAlert('写入 staging 失败', e.message);
       return new Response('STAGE_FAIL ' + e.message, E500);
     }
   }
   if (parseErrors.length > 0) {
-    sendAlert('解析失败', parseErrors.join(' | '));
+    await sendAlert('解析失败', parseErrors.join(' | '));
     return new Response('ok-no-rows; parse-errors: ' + parseErrors.join(' | '), E500);
+  }
+  // blind-spot fix (issue #27): attachment present but 0 rows parsed ->
+  // likely empty table / header-only / header columns not matching SOP mapping.
+  // Previously this returned 200 silently (data-loss risk). Now we alert.
+  if (atts.length > 0) {
+    await sendAlert(
+      '解析成功但 0 行',
+      '邮件含附件但未解析出任何数据行（可能为空表 / 仅表头 / 表头列名不匹配 SOP 映射）。subject=' +
+        subject +
+        ' from=' +
+        from
+    );
   }
   return new Response('ok-no-rows', OK);
 });
