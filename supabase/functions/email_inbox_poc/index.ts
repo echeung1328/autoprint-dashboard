@@ -28,33 +28,58 @@ const E500 = { status: 500 };
 // Generic path: set INGEST_ALERT_WEBHOOK to any HTTPS endpoint (e.g. an email-bridge).
 // If neither is configured, alerts are silently skipped (no error).
 // Note: Supabase Edge runtime only allows HTTPS egress, so raw SMTP is not used here.
+// Diagnostic: every attempt is recorded in ingest_alert_log (success/fail + error) for SQL review.
 async function sendAlert(kind: string, detail: string) {
+  let channel = 'none';
+  let success = false;
+  let err = '';
   try {
     const to = Deno.env.get('ALERT_EMAIL_TO');
     const key = Deno.env.get('RESEND_API_KEY');
     if (to && key) {
-      await fetch('https://api.resend.com/emails', {
+      channel = 'resend';
+      const r = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: Deno.env.get('ALERT_EMAIL_FROM') || 'autoprint-alerts@resend.dev',
+          from: Deno.env.get('ALERT_EMAIL_FROM') || 'onboarding@resend.dev',
           to: [to],
           subject: '[AutoPrint 入库告警] ' + kind,
           text: detail + '\n\n时间: ' + new Date().toISOString()
         })
       });
+      if (!r.ok) {
+        err = 'resend ' + r.status + ' ' + (await r.text()).slice(0, 300);
+        throw new Error(err);
+      }
+      success = true;
       return;
     }
     const wh = Deno.env.get('INGEST_ALERT_WEBHOOK');
     if (wh) {
-      await fetch(wh, {
+      channel = 'webhook';
+      const r = await fetch(wh, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind, detail, at: new Date().toISOString() })
       });
+      if (!r.ok) {
+        err = 'webhook ' + r.status;
+        throw new Error(err);
+      }
+      success = true;
+      return;
     }
   } catch (e) {
-    console.log('alert-send-fail', e && e.message);
+    success = false;
+    err = (e && e.message) || String(e);
+    console.log('alert-send-fail', err);
+  } finally {
+    try {
+      await restInsert('ingest_alert_log', [{ kind, channel, success, detail, error_msg: err }]);
+    } catch (_) {
+      /* ignore log failure */
+    }
   }
 }
 
