@@ -155,16 +155,17 @@ LIMIT 20;
 
 ## 7. 紧急恢复：数据转正
 
-仅当 `report_autoprint_staging` 有**已确认无误**的 `pending` 数据需要写入主表时执行（建议 AI 代执行或复核）。逻辑：按 `("Title" + 执行时间)` 复合键去重，已存在则更新、不存在则插入。
+仅当 `report_autoprint_staging` 有**已确认无误**的 `pending` 数据需要写入主表时执行（建议 AI 代执行或复核）。业务规则：**每个业务日（北京时间）只能有一条记录**，主表已通过 `UNIQUE(execution_date)` 强制。转正去重键 = **业务日**（由 `执行时间` 换算：`(执行时间 AT TIME ZONE 'Asia/Shanghai')::date`，与约束同源），已存在则更新、不存在则插入。
 
 ```sql
 -- ① 转正：staging(pending) → 主表 ReportAutoPrint
--- ⚠️ 重要约束说明（已实测验证）：
---   a) 耗时分钟 是 GENERATED ALWAYS 生成列（由 完成时间-执行时间 自动计算），严禁手动插入，否则报 428C9；
---   b) 主表 ReportAutoPrint 当前【没有】(Title,执行时间) 唯一约束，故 ON CONFLICT 不可用（报 42P10）。
---   因此用「先 UPDATE 已存在行 + 再 INSERT 不存在行」模拟 upsert，无需改表结构。
---
--- 步骤 A：更新主表中已存在的同名同日行
+-- ⚠️ 约束说明（已实测验证）：
+--   a) 耗时分钟 是 GENERATED ALWAYS 生成列（完成时间-执行时间），严禁手动插入，否则报 428C9；
+--   b) 主表已有 UNIQUE(execution_date) 约束（每日业务日唯一），重复业务日插入会被数据库直接拦截（报 23505）；
+--      因此用「先 UPDATE 已存在行 + 再 INSERT 不存在行」模拟 upsert，并以【业务日】匹配，而非原始时间戳。
+--   c) ⚠️ 必须显式 AT TIME ZONE 'Asia/Shanghai'：执行时间是 UTC 存储，直接 ::date 会按会话时区(UTC) 折叠，跨日重跑会算错业务日。
+
+-- 步骤 A：更新主表中已存在的同日（业务日）行
 UPDATE "ReportAutoPrint" r
 SET 总数 = s.总数, 成功 = s.成功, 跳过 = s.跳过, 失败 = s.失败,
     完成时间 = s.完成时间, "附件Excel表格" = s."附件Excel表格",
@@ -172,9 +173,9 @@ SET 总数 = s.总数, 成功 = s.成功, 跳过 = s.跳过, 失败 = s.失败,
     "ModifiedBy" = s."ModifiedBy", "Modified" = now()
 FROM report_autoprint_staging s
 WHERE s.status = 'pending'
-  AND r."Title" = s."Title" AND r.执行时间 = s.执行时间;
+  AND r.execution_date = (s.执行时间 AT TIME ZONE 'Asia/Shanghai')::date;
 
--- 步骤 B：插入主表中尚不存在的同名同日行
+-- 步骤 B：插入主表中尚不存在的同日（业务日）行
 INSERT INTO "ReportAutoPrint"
   ("Title", 执行时间, 总数, 成功, 跳过, 失败, 完成时间, "附件Excel表格", 任务完成通知邮件, 标签, "CreatedBy", "ModifiedBy")
 SELECT
@@ -183,14 +184,14 @@ FROM report_autoprint_staging s
 WHERE s.status = 'pending'
   AND NOT EXISTS (
     SELECT 1 FROM "ReportAutoPrint" r
-    WHERE r."Title" = s."Title" AND r.执行时间 = s.执行时间
+    WHERE r.execution_date = (s.执行时间 AT TIME ZONE 'Asia/Shanghai')::date
   );
 
 -- ② 标记已转正
 UPDATE report_autoprint_staging SET status = 'promoted' WHERE status = 'pending';
 ```
 
-⚠️ 执行前请 AI 或懂 SQL 的人**先复核 staging 数据**，避免脏数据进主表（例如总数/成功数为 0 的空行）。
+⚠️ 执行前请 AI 或懂 SQL 的人**先复核 staging 数据**，避免脏数据进主表（例如同一业务日出现多封邮件、或数值明显异常如负数）。注意：**总数=0 是合法数据**（当天确实没有打印任务），不要误删或当作脏数据。
 
 ---
 
@@ -236,6 +237,19 @@ FROM email_raw_archive ORDER BY received_at DESC LIMIT 10;
 -- 4) 告警健康
 SELECT created_at, kind, channel, success, error_msg
 FROM ingest_alert_log ORDER BY created_at DESC LIMIT 20;
+
+-- 5) 「每日一次执行」约束落地检查（返回约束定义 = 已落地；约束存在且数据 0 重复 = 合规）
+SELECT conname, pg_get_constraintdef(oid) AS def
+FROM pg_constraint
+WHERE conrelid = '"ReportAutoPrint"'::regclass
+  AND contype = 'u';
+
+SELECT COUNT(*) AS dup_business_days   -- 预期 0（有数字 = 存在重复业务日，需查 #33）
+FROM (
+  SELECT (执行时间 AT TIME ZONE 'Asia/Shanghai')::date AS bj_date
+  FROM "ReportAutoPrint"
+  GROUP BY 1 HAVING COUNT(*) > 1
+) t;
 ```
 
 ## 附录 B：本 SOP 关联交付物
