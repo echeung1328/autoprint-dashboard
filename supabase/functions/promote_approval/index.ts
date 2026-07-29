@@ -15,12 +15,13 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnye
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
 const APPROVAL_SECRET = Deno.env.get('PROJECT_APPROVAL_SECRET') || '';
 
-const HTML_HEADERS = new Headers({ 'Content-Type': 'text/html; charset=utf-8' });
+const HTML_HEADERS: Record<string, string> = { 'Content-Type': 'text/html; charset=utf-8' };
 const HTML_ENCODER = new TextEncoder();
 
 function htmlResponse(body: string, status = 200): Response {
-  // Encode string to UTF-8 bytes so Deno does not auto-infer text/plain from a string body.
-  return new Response(HTML_ENCODER.encode(body), { status, headers: HTML_HEADERS });
+  // Supabase Edge Function gateway respects plain-object headers; string bodies can be auto-inferred as text/plain.
+  // Encode to UTF-8 bytes and use a plain-object headers dict to force text/html.
+  return new Response(HTML_ENCODER.encode(body), { status, headers: { ...HTML_HEADERS } });
 }
 
 function checkEnv() {
