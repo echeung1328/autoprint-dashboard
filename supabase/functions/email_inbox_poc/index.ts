@@ -1,15 +1,18 @@
-// Edge Function: email_inbox_poc v10 (formal pipeline)
+// Edge Function: email_inbox_poc v11 (multi-source ingest, issue #34)
 // - Basic Auth gate + whitelist (same as POC)
 // - service_role write to report_autoprint_staging (SOP cleaning applied)
 // - raw archive to email_raw_archive (RLS ON; only service_role can write, approved users can read)
 //
-// Direction B key changes vs POC:
-//   1. anon key -> SUPABASE_SERVICE_ROLE_KEY (bypass RLS on ReportAutoPrint/staging)
-//   2. parse xlsx/csv attachments, apply SOP data-quality rules
-//   3. land cleaned rows into report_autoprint_staging (human confirms promotion later)
+// v11 changes (design_multi_source_ingest_v1.0.md):
+//   1. BODY channel: email body parsed first (guard-matched daily notification);
+//      attachments are the fallback / bulk-import path (D1 priority BODY > XLSX)
+//   2. Excel path CreatedBy = from_email (D2, was batchTag); batch_tag keeps batch trace
+//   3. channel tokens in 标签: SRC=BODY / SRC=XLSX (+ SP_REC=<id> for body) (D3)
+//   4. body archived to email_raw_archive as filename='(email_body)'
 
 import * as XLSX from './xlsx.mjs';
 import { shouldSkipTitle } from './row_filter.mjs';
+import { parseBody } from './body_parser.mjs';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
@@ -241,6 +244,34 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+// ---- email body text extraction (BODY channel, issue #34) ----
+// Webhook Relay payload field name may vary; try common plain-text fields first,
+// then fall back to stripping HTML.
+function stripHtml(html: string): string {
+  return String(html || '')
+    .replace(/<\s*(br|\/p|\/div|\/tr|\/li)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#65306;/g, '：');
+}
+function pickBodyText(p: any): string {
+  const cand = p.body_plain ?? p.plain ?? p.text ?? p.body ?? p.message ?? null;
+  if (cand && typeof cand === 'string' && cand.trim()) return cand;
+  const html = p.body_html ?? p.html ?? null;
+  if (html && typeof html === 'string' && html.trim()) return stripHtml(html);
+  return '';
+}
+// UTF-8 safe base64 (btoa alone throws on non-latin1)
+function b64utf8(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
 // ---- clean a parsed matrix into staging records (SOP rules) ----
 function cleanMatrix(matrix: string[][], from: string, filename: string, batchTag: string): any[] {
   if (!matrix || matrix.length < 2) return [];
@@ -260,8 +291,10 @@ function cleanMatrix(matrix: string[][], from: string, filename: string, batchTa
       成功: 0,
       跳过: 0,
       失败: 0,
-      CreatedBy: batchTag,
-      ModifiedBy: batchTag
+      // D2 (design_multi_source_ingest_v1.0.md §6): CreatedBy = sender, not batchTag.
+      // batch_tag still carries the batch trace (EMAIL_YYYYMM).
+      CreatedBy: from,
+      ModifiedBy: from
     };
     let title = '';
     let execTime: string | null = null;
@@ -299,6 +332,8 @@ function cleanMatrix(matrix: string[][], from: string, filename: string, batchTa
         rec['耗时分钟'] = Math.round((d2.getTime() - d1.getTime()) / 60000);
       }
     }
+    // D3: channel token in 标签 (append, keep any tag from the sheet)
+    rec['标签'] = rec['标签'] ? rec['标签'] + ';SRC=XLSX' : 'SRC=XLSX';
     // composite-key dedup within file (SOP §5.3.5)
     const key = title + '|' + (execTime || '');
     if (seen.has(key)) continue;
@@ -362,6 +397,81 @@ Deno.serve(async (req) => {
   }
 
   const batchTag = 'EMAIL_' + new Date().toISOString().slice(0, 7).replace('-', '');
+
+  // ---- BODY channel first (D1: body > attachment; issue #34) ----
+  // Guard inside parseBody: qualifies ONLY when all 7 required keys are present,
+  // so signatures/forwards can never hijack the attachment path.
+  const bodyText = pickBodyText(p);
+  if (bodyText) {
+    const br: any = parseBody(bodyText, { from, batchTag });
+    if (br.ok) {
+      const rec = br.record;
+      // archive raw body (replayable, like attachments)
+      try {
+        await restInsert('email_raw_archive', [
+          Object.assign({}, base, {
+            filename: '(email_body)',
+            content_type: 'text/plain',
+            raw_base64: b64utf8(bodyText),
+            row_count: 1,
+            status: 'stored',
+            error_msg: null
+          })
+        ]);
+      } catch (_) {
+        /* ignore */
+      }
+      // conflict marker (informational; promotion dedup is business-day based, SOP §7)
+      try {
+        rec.conflict_action = (await reportExists(rec.Title, rec['执行时间'])) ? 'update' : 'insert';
+      } catch (_) {
+        rec.conflict_action = 'check-error';
+      }
+      try {
+        await restInsert('report_autoprint_staging', [rec]);
+        // D1: BODY wins — any attachments are archived raw but NOT parsed
+        for (const a of atts) {
+          try {
+            await restInsert('email_raw_archive', [
+              Object.assign({}, base, {
+                filename: a.name,
+                content_type: a.content_type,
+                raw_base64: a.content,
+                row_count: null,
+                status: 'stored',
+                error_msg: 'skipped-body-priority'
+              })
+            ]);
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        return new Response('ok-staged-body-1' + (atts.length ? ' (atts-skipped=' + atts.length + ')' : ''), OK);
+      } catch (e) {
+        await sendAlert('写入 staging 失败(BODY)', e.message);
+        return new Response('STAGE_FAIL(body) ' + e.message, E500);
+      }
+    } else if (br.guardMatched) {
+      // notification-shaped body but broken (L3) -> archive parse_error + alert, then fall back to attachments
+      try {
+        await restInsert('email_raw_archive', [
+          Object.assign({}, base, {
+            filename: '(email_body)',
+            content_type: 'text/plain',
+            raw_base64: b64utf8(bodyText),
+            row_count: 0,
+            status: 'parse_error',
+            error_msg: br.reason
+          })
+        ]);
+      } catch (_) {
+        /* ignore */
+      }
+      await sendAlert('正文解析失败', br.reason + ' | subject=' + subject + ' from=' + from);
+    }
+    // guardMatched=false -> normal non-notification mail, silently fall through to attachments
+  }
+
   const stagingRows: any[] = [];
   const parseErrors: string[] = [];
 
@@ -369,7 +479,10 @@ Deno.serve(async (req) => {
     let matrix: string[][];
     try {
       if (/\.csv$/i.test(a.name || '') || /csv/.test(a.content_type || '')) {
-        matrix = parseCsv(atob(a.content));
+        // NOTE: atob() alone yields latin1 bytes — Chinese headers (执行时间 etc.)
+        // become mojibake and column mapping silently fails. Decode as UTF-8. (found by #34 integration test)
+        const csvBytes = Uint8Array.from(atob(a.content), (c) => c.charCodeAt(0));
+        matrix = parseCsv(new TextDecoder('utf-8').decode(csvBytes));
       } else {
         const buf = Uint8Array.from(atob(a.content), (c) => c.charCodeAt(0));
         const wb = XLSX.read(buf, { type: 'array' });
