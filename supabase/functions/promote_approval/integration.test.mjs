@@ -1,6 +1,6 @@
-// integration.test.mjs — offline integration test for promote_approval (issue #35)
+// integration.test.mjs — offline integration test for promote_approval v2 (issue #35)
 // Compiles the Deno Edge Function with esbuild, mocks Deno + fetch, and drives
-// GET (confirm page) / POST (execute) flows including one-time-use and expiry.
+// GET (302 redirect to external UI) / POST (execute + 302 redirect to result UI).
 //
 // Run: node integration.test.mjs
 import { createRequire } from 'module';
@@ -28,10 +28,12 @@ esbuild.buildSync({ entryPoints: [SRC], bundle: true, format: 'esm', platform: '
 
 // ---- mock Deno ----
 const SECRET = 'integration-secret-0123456789abcdef';
+const UI_URL = 'https://example.com/approval.html';
 const ENV = {
   SUPABASE_URL: 'https://test.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'sr_test',
   PROJECT_APPROVAL_SECRET: SECRET,
+  APPROVAL_UI_URL: UI_URL,
   RESEND_API_KEY: 'rk_test',
   ALERT_EMAIL_TO: 'zhang.hz@comlan.com'
 };
@@ -98,7 +100,7 @@ function mkRow(id, over = {}) {
 }
 async function get(id, exp, a, t) {
   const res = await handler(new Request(BASE + `?id=${id}&exp=${exp}&a=${a}&t=${t}`, { method: 'GET' }));
-  return { status: res.status, text: await res.text(), ct: res.headers.get('content-type') };
+  return { status: res.status, location: res.headers.get('location') };
 }
 async function postForm(id, exp, a, t) {
   const body = new URLSearchParams({ id, exp: String(exp), a, t }).toString();
@@ -107,11 +109,18 @@ async function postForm(id, exp, a, t) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body
   }));
-  return { status: res.status, text: await res.text(), ct: res.headers.get('content-type') };
+  return { status: res.status, location: res.headers.get('location') };
 }
 function reset() {
   patches.length = 0; rpcCalls.length = 0; emails.length = 0; rpcFail = false;
   for (const k of Object.keys(reqRows)) delete reqRows[k];
+}
+function locParams(location) {
+  if (!location) return {};
+  const u = new URL(location);
+  const out = {};
+  u.searchParams.forEach((v, k) => { out[k] = v; });
+  return out;
 }
 
 let failed = 0, total = 0;
@@ -121,31 +130,35 @@ function check(cond, desc, extra) {
   else { console.error('FAIL — ' + desc + (extra !== undefined ? ' | got=' + JSON.stringify(extra) : '')); failed++; }
 }
 
-// ---- 1. GET valid pending -> confirm page, ZERO mutations ----
+// ---- 1. GET valid pending -> 302 redirect to UI, ZERO mutations ----
 {
   reset();
   const id = 'aaaaaaaa-0000-0000-0000-000000000001';
   mkRow(id);
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await get(id, EXP_OK, 'approve', t);
-  check(r.status === 200 && r.text.includes('确认转正') && r.text.includes('<form method="POST">'), '1: GET renders confirm page with POST form', r.status);
-  check((r.ct || '').includes('text/html'), '1: GET Content-Type is text/html', r.ct);
+  check(r.status === 302, '1: GET -> 302 redirect', r.status);
+  const p = locParams(r.location);
+  check(p.id === id && p.a === 'approve' && p.exp === String(EXP_OK) && p.t === t, '1: redirect carries token params', p);
+  check(p.summary && p.staging_ids === '21,22', '1: redirect carries summary + staging ids', p);
   check(patches.length === 0 && rpcCalls.length === 0 && emails.length === 0, '1: GET causes ZERO mutations (Safe Links defense)', { patches, rpcCalls });
-  check(r.text.includes('21, 22'), '1: confirm page shows staging ids', '');
 }
 
-// ---- 2. GET tampered token -> invalid, no DB read needed ----
+// ---- 2. GET tampered token -> invalid redirect, no DB read needed ----
 {
   reset();
   const id = 'aaaaaaaa-0000-0000-0000-000000000002';
   mkRow(id);
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
-  const r = await get(id, EXP_OK, 'approve', t.replace(/^./, '0') === t ? 'f' + t.slice(1) : '0' + t.slice(1));
-  check(r.status === 200 && r.text.includes('链接无效'), '2: tampered token -> 链接无效', r.text.slice(0, 80));
+  const badT = t.replace(/^./, '0') === t ? 'f' + t.slice(1) : '0' + t.slice(1);
+  const r = await get(id, EXP_OK, 'approve', badT);
+  check(r.status === 302, '2: tampered token -> 302 redirect', r.status);
+  const p = locParams(r.location);
+  check(p.result === 'error' && p.error.includes('校验失败'), '2: tampered token -> UI error', p);
   check(rpcCalls.length === 0 && patches.length === 0, '2: no mutations');
 }
 
-// ---- 3. GET expired token param -> 过期 ----
+// ---- 3. GET expired token param -> expired redirect ----
 {
   reset();
   const id = 'aaaaaaaa-0000-0000-0000-000000000003';
@@ -153,7 +166,8 @@ function check(cond, desc, extra) {
   const expPast = NOW - 10;
   const t = await signToken(id, expPast, 'approve', SECRET);
   const r = await get(id, expPast, 'approve', t);
-  check(r.text.includes('链接已过期'), '3: expired token param -> 链接已过期');
+  check(r.status === 302, '3: expired token -> 302 redirect', r.status);
+  check(locParams(r.location).result === 'expired', '3: expired token -> UI expired');
 }
 
 // ---- 4. POST approve happy path ----
@@ -163,11 +177,12 @@ function check(cond, desc, extra) {
   mkRow(id);
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await postForm(id, EXP_OK, 'approve', t);
-  check(r.text.includes('转正完成') && r.text.includes('promoted=1'), '4: POST approve -> 转正完成', r.text.slice(0, 120));
-  check((r.ct || '').includes('text/html'), '4: POST result Content-Type is text/html', r.ct);
+  check(r.status === 302, '4: POST approve -> 302 redirect', r.status);
+  const p = locParams(r.location);
+  check(p.result === 'approved' && p.detail.includes('promoted=1'), '4: POST approve -> UI approved', p);
   check(rpcCalls.length === 1 && JSON.stringify(rpcCalls[0].p_ids) === '[21,22]', '4: RPC called with staging ids', rpcCalls);
-  const p = patches.find((x) => x.table === 'promote_approval_request');
-  check(p && p.body.status === 'approved' && p.body.action_result.includes('promoted=1'), '4: request row -> approved + result', p && p.body);
+  const rp = patches.find((x) => x.table === 'promote_approval_request');
+  check(rp && rp.body.status === 'approved' && rp.body.action_result.includes('promoted=1'), '4: request row -> approved + result', rp && rp.body);
   check(emails.length === 1 && emails[0].subject.includes('已批准'), '4: result email sent', emails.map((e) => e.subject));
 }
 
@@ -178,7 +193,8 @@ function check(cond, desc, extra) {
   mkRow(id, { status: 'approved', acted_at: '2026-07-30T10:00:00Z' });
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await postForm(id, EXP_OK, 'approve', t);
-  check(r.text.includes('该请求已处理') && r.text.includes('approved'), '5: replay blocked (one-time use)', r.text.slice(0, 100));
+  check(r.status === 302, '5: replay -> 302 redirect', r.status);
+  check(locParams(r.location).error.includes('approved'), '5: replay blocked (one-time use)');
   check(rpcCalls.length === 0, '5: RPC NOT called on replay');
 }
 
@@ -189,7 +205,8 @@ function check(cond, desc, extra) {
   mkRow(id);
   const t = await signToken(id, EXP_OK, 'reject', SECRET);
   const r = await postForm(id, EXP_OK, 'reject', t);
-  check(r.text.includes('已拒绝'), '6: POST reject -> 已拒绝', r.text.slice(0, 80));
+  check(r.status === 302, '6: POST reject -> 302 redirect', r.status);
+  check(locParams(r.location).result === 'rejected', '6: POST reject -> UI rejected');
   const sp = patches.find((x) => x.table === 'report_autoprint_staging');
   check(sp && sp.body.status === 'rejected' && sp.url.includes('id=in.(21,22)') && sp.url.includes('status=eq.pending'), '6: staging PATCH rejected, scoped to pending ids', sp && sp.url);
   const rp = patches.find((x) => x.table === 'promote_approval_request');
@@ -204,13 +221,14 @@ function check(cond, desc, extra) {
   mkRow(id, { expires_at: new Date(Date.now() - 60000).toISOString() });
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await postForm(id, EXP_OK, 'approve', t);
-  check(r.text.includes('链接已过期'), '7: DB-expired request -> 过期页', r.text.slice(0, 80));
+  check(r.status === 302, '7: DB-expired request -> 302 redirect', r.status);
+  check(locParams(r.location).result === 'expired', '7: DB-expired -> UI expired');
   const p = patches.find((x) => x.table === 'promote_approval_request');
   check(p && p.body.status === 'expired', '7: request row flipped to expired');
   check(rpcCalls.length === 0, '7: no RPC');
 }
 
-// ---- 8. RPC failure -> error page, staging untouched, error logged ----
+// ---- 8. RPC failure -> error redirect, staging untouched, error logged ----
 {
   reset();
   const id = 'aaaaaaaa-0000-0000-0000-000000000008';
@@ -218,11 +236,13 @@ function check(cond, desc, extra) {
   rpcFail = true;
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await postForm(id, EXP_OK, 'approve', t);
-  check(r.text.includes('执行失败') && r.text.includes('SOP'), '8: RPC fail -> error page with SOP fallback hint', r.text.slice(0, 120));
-  const p = patches.find((x) => x.table === 'promote_approval_request' && x.body.error_msg);
-  check(!!p, '8: error_msg recorded on request row');
-  const p2 = patches.find((x) => x.table === 'promote_approval_request' && x.body.status);
-  check(!p2, '8: status stays pending (retryable)', p2 && p2.body);
+  check(r.status === 302, '8: RPC fail -> 302 redirect', r.status);
+  const p = locParams(r.location);
+  check(p.result === 'error' && p.error.includes('SOP'), '8: RPC fail -> UI error with SOP fallback hint', p);
+  const ep = patches.find((x) => x.table === 'promote_approval_request' && x.body.error_msg);
+  check(!!ep, '8: error_msg recorded on request row');
+  const sp = patches.find((x) => x.table === 'promote_approval_request' && x.body.status);
+  check(!sp, '8: status stays pending (retryable)', sp && sp.body);
   check(emails.length === 1 && emails[0].subject.includes('失败'), '8: failure email sent');
 }
 
@@ -232,7 +252,7 @@ function check(cond, desc, extra) {
   const id = 'aaaaaaaa-0000-0000-0000-000000000009';
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await get(id, EXP_OK, 'approve', t);
-  check(r.text.includes('请求不存在'), '9: unknown id -> 请求不存在');
+  check(r.status === 302 && locParams(r.location).result === 'error', '9: unknown id -> UI error');
   const res = await handler(new Request(BASE, { method: 'PUT' }));
   check(res.status === 405, '9: PUT -> 405');
 }

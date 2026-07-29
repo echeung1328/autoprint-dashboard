@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>AutoPrint 数据转正审批</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, Segoe UI, Arial, sans-serif;
+      background: #f5f6f8;
+      margin: 0;
+      padding: 24px;
+      color: #111827;
+    }
+    .card {
+      max-width: 560px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    h2 { margin: 0 0 8px; }
+    p { color: #475467; }
+    pre {
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px;
+      white-space: pre-wrap;
+      color: #334155;
+      font-size: 13px;
+    }
+    .muted { color: #475467; font-size: 13px; }
+    .hint { color: #98a2b3; font-size: 12px; margin-top: 28px; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 28px;
+      font-size: 16px;
+      cursor: pointer;
+      color: #fff;
+    }
+    .approve { background: #16a34a; }
+    .reject { background: #dc2626; }
+    .secondary { background: #6b7280; }
+    .hidden { display: none; }
+    .result-approved { color: #16a34a; }
+    .result-rejected { color: #dc2626; }
+    .result-error { color: #dc2626; }
+    .result-expired { color: #d97706; }
+  </style>
+</head>
+<body>
+  <div class="card" id="app">
+    <!-- 结果态 -->
+    <div id="result-pane" class="hidden">
+      <h2 id="result-title"></h2>
+      <p id="result-msg"></p>
+      <p class="hint">AutoPrint 数据转正审批 · issue #35</p>
+    </div>
+
+    <!-- 错误态（参数缺失/无效） -->
+    <div id="error-pane" class="hidden">
+      <h2 class="result-error">链接无效或已过期</h2>
+      <p id="error-msg"></p>
+      <p class="hint">如需处理该批数据，请使用 SOP §7 手动转正（后备通道），或等待下一封审批邮件。</p>
+    </div>
+
+    <!-- 确认态 -->
+    <div id="confirm-pane" class="hidden">
+      <h2 id="confirm-title"></h2>
+      <p>请核对以下摘要后点击按钮确认。此操作将实际修改数据。</p>
+      <pre id="summary">加载中...</pre>
+      <p class="muted" id="meta"></p>
+      <form method="POST" id="action-form">
+        <input type="hidden" name="id" id="f-id">
+        <input type="hidden" name="exp" id="f-exp">
+        <input type="hidden" name="a" id="f-a">
+        <input type="hidden" name="t" id="f-t">
+        <button type="submit" id="submit-btn"></button>
+      </form>
+      <p class="hint">AutoPrint 数据转正审批 · issue #35</p>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, function (m) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+        });
+      }
+
+      const params = new URLSearchParams(location.search);
+
+      function get(name) {
+        const v = params.get(name);
+        return v ? v.trim() : '';
+      }
+
+      function show(id) {
+        document.querySelectorAll('#app > div').forEach(el => el.classList.add('hidden'));
+        document.getElementById(id).classList.remove('hidden');
+      }
+
+      const result = get('result');
+      const detail = get('detail');
+      const error = get('error');
+
+      // 1. 结果态（从 POST 执行后跳转回来）
+      if (result) {
+        const title = document.getElementById('result-title');
+        const msg = document.getElementById('result-msg');
+        if (result === 'approved') {
+          title.textContent = '✅ 转正完成';
+          title.className = 'result-approved';
+          msg.innerHTML = '数据已写入主表。' + (detail ? '<br><b>' + escapeHtml(detail) + '</b>' : '');
+        } else if (result === 'rejected') {
+          title.textContent = '❌ 已拒绝';
+          title.className = 'result-rejected';
+          msg.innerHTML = '本批数据已标记 rejected（不进主表，保留审计）。' + (detail ? '<br><b>' + escapeHtml(detail) + '</b>' : '');
+        } else if (result === 'expired') {
+          title.textContent = '⏰ 链接已过期';
+          title.className = 'result-expired';
+          msg.textContent = detail || '该审批链接已超过有效期。';
+        } else if (result === 'error') {
+          title.textContent = '⚠️ 执行失败';
+          title.className = 'result-error';
+          msg.innerHTML = escapeHtml(error || detail || '操作执行失败，请稍后重试或使用 SOP §7 手动转正。');
+        } else {
+          title.textContent = '提示';
+          msg.textContent = detail || '';
+        }
+        show('result-pane');
+        return;
+      }
+
+      // 2. 参数校验
+      const id = get('id');
+      const exp = get('exp');
+      const a = get('a');
+      const t = get('t');
+
+      if (!id || !exp || !a || !t || (a !== 'approve' && a !== 'reject')) {
+        document.getElementById('error-msg').textContent = error || '审批链接参数缺失或被篡改。';
+        show('error-pane');
+        return;
+      }
+
+      // 3. 确认态
+      const isApprove = a === 'approve';
+      document.getElementById('confirm-title').textContent = isApprove ? '✅ 批准数据转正' : '❌ 拒绝本批数据';
+      document.getElementById('submit-btn').textContent = isApprove ? '确认转正（写入主表）' : '确认拒绝（标记 rejected）';
+      document.getElementById('submit-btn').className = isApprove ? 'approve' : 'reject';
+
+      const summary = get('summary') || '(无摘要)';
+      document.getElementById('summary').textContent = summary;
+
+      const stagingIds = get('staging_ids') || '';
+      const expiresAt = get('expires_at') || '';
+      let metaText = '';
+      if (stagingIds) metaText += '涉及 staging 行: ' + stagingIds;
+      if (expiresAt) metaText += (metaText ? ' · ' : '') + '有效期至: ' + expiresAt;
+      document.getElementById('meta').textContent = metaText;
+
+      document.getElementById('f-id').value = id;
+      document.getElementById('f-exp').value = exp;
+      document.getElementById('f-a').value = a;
+      document.getElementById('f-t').value = t;
+
+      // form action 指向 Edge Function（页面托管在 GitHub Pages，与函数跨域；用 form POST 无需 CORS）
+      document.getElementById('action-form').action = 'https://uvqjtvonxwsmhntnyest.supabase.co/functions/v1/promote_approval';
+
+      show('confirm-pane');
+    })();
+  </script>
+</body>
+</html>
