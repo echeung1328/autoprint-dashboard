@@ -16,6 +16,12 @@ const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('
 const APPROVAL_SECRET = Deno.env.get('PROJECT_APPROVAL_SECRET') || '';
 
 const HTML_HEADERS = new Headers({ 'Content-Type': 'text/html; charset=utf-8' });
+const HTML_ENCODER = new TextEncoder();
+
+function htmlResponse(body: string, status = 200): Response {
+  // Encode string to UTF-8 bytes so Deno does not auto-infer text/plain from a string body.
+  return new Response(HTML_ENCODER.encode(body), { status, headers: HTML_HEADERS });
+}
 
 function checkEnv() {
   const missing = [
@@ -111,6 +117,7 @@ function page(title: string, inner: string): string {
   return (
     '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' +
     '<title>' + esc(title) + '</title></head>' +
     '<body style="font-family:system-ui,Segoe UI,Arial,sans-serif;background:#f5f6f8;margin:0;padding:24px;">' +
     '<div style="max-width:560px;margin:40px auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.08);">' +
@@ -146,10 +153,10 @@ function confirmPage(row: any, q: { id: string; exp: string; a: string; t: strin
 }
 
 function infoPage(title: string, msg: string, color?: string): Response {
-  return new Response(
+  return htmlResponse(
     page(title, '<h2 style="margin:0 0 8px;color:' + (color || '#111827') + ';">' + esc(title) + '</h2>' +
       '<p style="color:#475467;">' + msg + '</p>'),
-    { status: 200, headers: HTML_HEADERS }
+    200
   );
 }
 
@@ -219,7 +226,7 @@ Deno.serve(async (req) => {
 
   // 3. GET -> confirm page ONLY (zero side effects)
   if (req.method === 'GET') {
-    return new Response(confirmPage(row, q), { status: 200, headers: HTML_HEADERS });
+    return htmlResponse(confirmPage(row, q), 200);
   }
 
   // 4. POST -> execute
