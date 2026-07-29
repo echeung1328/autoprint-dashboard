@@ -15,7 +15,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnye
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
 const APPROVAL_SECRET = Deno.env.get('PROJECT_APPROVAL_SECRET') || '';
 
-const HTML_HEADERS = { 'Content-Type': 'text/html; charset=utf-8' };
+const HTML_HEADERS = new Headers({ 'Content-Type': 'text/html; charset=utf-8' });
 
 function checkEnv() {
   const missing = [

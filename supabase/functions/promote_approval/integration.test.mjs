@@ -98,7 +98,7 @@ function mkRow(id, over = {}) {
 }
 async function get(id, exp, a, t) {
   const res = await handler(new Request(BASE + `?id=${id}&exp=${exp}&a=${a}&t=${t}`, { method: 'GET' }));
-  return { status: res.status, text: await res.text() };
+  return { status: res.status, text: await res.text(), ct: res.headers.get('content-type') };
 }
 async function postForm(id, exp, a, t) {
   const body = new URLSearchParams({ id, exp: String(exp), a, t }).toString();
@@ -107,7 +107,7 @@ async function postForm(id, exp, a, t) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body
   }));
-  return { status: res.status, text: await res.text() };
+  return { status: res.status, text: await res.text(), ct: res.headers.get('content-type') };
 }
 function reset() {
   patches.length = 0; rpcCalls.length = 0; emails.length = 0; rpcFail = false;
@@ -129,6 +129,7 @@ function check(cond, desc, extra) {
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await get(id, EXP_OK, 'approve', t);
   check(r.status === 200 && r.text.includes('确认转正') && r.text.includes('<form method="POST">'), '1: GET renders confirm page with POST form', r.status);
+  check((r.ct || '').includes('text/html'), '1: GET Content-Type is text/html', r.ct);
   check(patches.length === 0 && rpcCalls.length === 0 && emails.length === 0, '1: GET causes ZERO mutations (Safe Links defense)', { patches, rpcCalls });
   check(r.text.includes('21, 22'), '1: confirm page shows staging ids', '');
 }
@@ -163,6 +164,7 @@ function check(cond, desc, extra) {
   const t = await signToken(id, EXP_OK, 'approve', SECRET);
   const r = await postForm(id, EXP_OK, 'approve', t);
   check(r.text.includes('转正完成') && r.text.includes('promoted=1'), '4: POST approve -> 转正完成', r.text.slice(0, 120));
+  check((r.ct || '').includes('text/html'), '4: POST result Content-Type is text/html', r.ct);
   check(rpcCalls.length === 1 && JSON.stringify(rpcCalls[0].p_ids) === '[21,22]', '4: RPC called with staging ids', rpcCalls);
   const p = patches.find((x) => x.table === 'promote_approval_request');
   check(p && p.body.status === 'approved' && p.body.action_result.includes('promoted=1'), '4: request row -> approved + result', p && p.body);
