@@ -41,7 +41,11 @@ const ENV = {
   SUPABASE_SERVICE_ROLE_KEY: 'sr_test',
   WEBHOOK_BASIC_USER: 'poc',
   WEBHOOK_BASIC_PASS: 'testpass',
-  ALLOWED_SENDERS: 'zhang.hz@comlan.com'
+  ALLOWED_SENDERS: 'zhang.hz@comlan.com',
+  // #35 approval email
+  PROJECT_APPROVAL_SECRET: 'test-approval-secret-0123456789',
+  RESEND_API_KEY: 'rk_test',
+  ALERT_EMAIL_TO: 'zhang.hz@comlan.com'
 };
 let handler = null;
 globalThis.Deno = {
@@ -51,12 +55,19 @@ globalThis.Deno = {
   }
 };
 
-// ---- mock fetch: capture Supabase REST inserts ----
+// ---- mock fetch: capture Supabase REST inserts + Resend emails ----
 const store = {}; // table -> rows[]
 const calls = [];
+const emails = []; // resend payloads
+let idSeq = 100;
+let uuidSeq = 0;
 globalThis.fetch = async (url, opts = {}) => {
   calls.push({ url: String(url), method: opts.method || 'GET' });
   const u = String(url);
+  if (u.startsWith('https://api.resend.com/')) {
+    emails.push(JSON.parse(opts.body));
+    return new Response('{}', { status: 200 });
+  }
   if (u.includes('/rest/v1/ReportAutoPrint?select=id')) {
     return new Response(JSON.stringify([]), { status: 200 }); // no existing main-table row
   }
@@ -64,7 +75,18 @@ globalThis.fetch = async (url, opts = {}) => {
   if (m && (opts.method || 'GET') === 'POST') {
     const table = m[1];
     store[table] = store[table] || [];
-    for (const r of JSON.parse(opts.body)) store[table].push(r);
+    const parsed = JSON.parse(opts.body);
+    const withIds = parsed.map((r) =>
+      Object.assign(
+        { id: table === 'promote_approval_request' ? 'uuid-req-' + ++uuidSeq : ++idSeq },
+        r
+      )
+    );
+    for (const r of withIds) store[table].push(r);
+    const prefer = (opts.headers || {}).Prefer || '';
+    if (prefer.includes('representation')) {
+      return new Response(JSON.stringify(withIds), { status: 201 });
+    }
     return new Response('', { status: 201 });
   }
   return new Response('not-mocked ' + u, { status: 500 });
@@ -88,6 +110,7 @@ async function post(payload) {
 }
 function reset() {
   for (const k of Object.keys(store)) delete store[k];
+  emails.length = 0;
 }
 
 let failed = 0;
@@ -131,6 +154,12 @@ Title：AutoPrint-2026-07-29 09:30
   check(rec.conflict_action === 'insert', 'A: conflict_action insert', rec.conflict_action);
   const arch = (store.email_raw_archive || []).map((a) => a.filename);
   check(arch.includes('(meta)') && arch.includes('(email_body)'), 'A: archive has (meta)+(email_body)', arch);
+  // #35: approval email
+  const reqRows2 = store.promote_approval_request || [];
+  check(reqRows2.length === 1 && Array.isArray(reqRows2[0].staging_ids) && reqRows2[0].staging_ids.length === 1, 'A: approval request created with staging id', reqRows2);
+  check(emails.length === 1 && emails[0].subject.includes('待审批'), 'A: approval email sent', emails.map((e) => e.subject));
+  const h = (emails[0] || {}).html || '';
+  check(h.includes('a=approve&t=') && h.includes('a=reject&t=') && h.includes('/functions/v1/promote_approval?id=uuid-req-'), 'A: email has signed approve+reject links', h.slice(0, 0));
 }
 
 // ---- Scenario B: plain body + CSV attachment (attachment fallback path) ----
@@ -149,6 +178,7 @@ Title：AutoPrint-2026-07-29 09:30
   check(rec['标签'] === 'SRC=XLSX', 'B: 标签 SRC=XLSX', rec['标签']);
   check(rec['执行时间'] === '2026-07-28T09:30:00+08:00', 'B: 执行时间 +08:00', rec['执行时间']);
   check(rec.batch_tag && rec.batch_tag.startsWith('EMAIL_'), 'B: batch_tag kept', rec.batch_tag);
+  check(emails.length === 1 && emails[0].subject.includes('待审批'), 'B: approval email sent for XLSX path too', emails.map((e) => e.subject));
 }
 
 // ---- Scenario C: qualified body AND attachment -> body wins (D1) ----
@@ -187,6 +217,7 @@ Title：AutoPrint-2026-07-29 09:30
   check(r.status === 200 && r.text === 'ok-no-rows', 'E: ordinary mail passes silently', r);
   check((store.report_autoprint_staging || []).length === 0, 'E: no staging row');
   check(!(store.ingest_alert_log || []).length, 'E: no alert', store.ingest_alert_log);
+  check(emails.length === 0, 'E: no approval email for ordinary mail', emails.length);
 }
 
 // ---- Scenario F: whitelist reject unchanged ----

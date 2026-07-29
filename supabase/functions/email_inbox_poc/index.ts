@@ -1,4 +1,4 @@
-// Edge Function: email_inbox_poc v11 (multi-source ingest, issue #34)
+// Edge Function: email_inbox_poc v12 (multi-source ingest + approval email, issues #34 #35)
 // - Basic Auth gate + whitelist (same as POC)
 // - service_role write to report_autoprint_staging (SOP cleaning applied)
 // - raw archive to email_raw_archive (RLS ON; only service_role can write, approved users can read)
@@ -9,10 +9,16 @@
 //   2. Excel path CreatedBy = from_email (D2, was batchTag); batch_tag keeps batch trace
 //   3. channel tokens in 标签: SRC=BODY / SRC=XLSX (+ SP_REC=<id> for body) (D3)
 //   4. body archived to email_raw_archive as filename='(email_body)'
+//
+// v12 changes (design_promote_approval_v1.0.md, issue #35):
+//   5. after staging insert, create promote_approval_request + send approval email
+//      (Resend) with HMAC-signed approve/reject links -> promote_approval function.
+//      Best-effort: any failure never blocks ingestion (SOP §7 stays as fallback).
 
 import * as XLSX from './xlsx.mjs';
 import { shouldSkipTitle } from './row_filter.mjs';
 import { parseBody } from './body_parser.mjs';
+import { signToken } from './approval_token.mjs';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
@@ -107,6 +113,94 @@ async function restInsert(table: string, rows: any[]) {
   if (!r.ok) {
     const t = await r.text();
     throw new Error('insert ' + table + ' ' + r.status + ' ' + t.slice(0, 200));
+  }
+}
+
+// like restInsert but returns inserted rows (need staging ids for approval request, #35)
+async function restInsertReturning(table: string, rows: any[]): Promise<any[]> {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/' + table, {
+    method: 'POST',
+    headers: {
+      apikey: SERVICE_ROLE,
+      Authorization: 'Bearer ' + SERVICE_ROLE,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify(rows)
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error('insert ' + table + ' ' + r.status + ' ' + t.slice(0, 200));
+  }
+  return await r.json();
+}
+
+// ---- approval email (issue #35; best-effort, never blocks ingestion) ----
+// Requires PROJECT_APPROVAL_SECRET + RESEND_API_KEY + ALERT_EMAIL_TO; silently skips if unset.
+function bjDay(iso: string | null): string {
+  if (!iso) return '?';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '?';
+  return new Date(d.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+async function sendApprovalEmail(inserted: any[]) {
+  try {
+    const secret = Deno.env.get('PROJECT_APPROVAL_SECRET');
+    const to = Deno.env.get('ALERT_EMAIL_TO');
+    const key = Deno.env.get('RESEND_API_KEY');
+    if (!secret || !to || !key || !inserted.length) return;
+
+    const ids = inserted.map((r) => r.id).filter((n) => Number.isInteger(n));
+    if (!ids.length) return;
+    const summaryLines = inserted.map(
+      (r) =>
+        '业务日 ' + bjDay(r['执行时间']) + ' · ' + (r.Title || r['Title'] || '(无标题)') +
+        ' · 总数 ' + (r['总数'] ?? '?') + ' 成功 ' + (r['成功'] ?? '?') +
+        ' 跳过 ' + (r['跳过'] ?? '?') + ' 失败 ' + (r['失败'] ?? '?') +
+        ' · 来源 ' + (r.source_filename === '(email_body)' ? '邮件正文' : r.source_filename)
+    );
+    const summary = summaryLines.join('\n');
+
+    const expEpoch = Math.floor(Date.now() / 1000) + 72 * 3600;
+    const reqRows = await restInsertReturning('promote_approval_request', [
+      { staging_ids: ids, summary, expires_at: new Date(expEpoch * 1000).toISOString(), status: 'pending' }
+    ]);
+    const reqId = reqRows[0].id;
+
+    const approveT = await signToken(reqId, expEpoch, 'approve', secret);
+    const rejectT = await signToken(reqId, expEpoch, 'reject', secret);
+    const baseUrl = SUPABASE_URL + '/functions/v1/promote_approval';
+    const approveUrl = baseUrl + '?id=' + reqId + '&exp=' + expEpoch + '&a=approve&t=' + approveT;
+    const rejectUrl = baseUrl + '?id=' + reqId + '&exp=' + expEpoch + '&a=reject&t=' + rejectT;
+
+    const rowsHtml = summaryLines
+      .map((l) => '<tr><td style="padding:6px 10px;border:1px solid #e5e7eb;font-size:13px;">' + l + '</td></tr>')
+      .join('');
+    const html =
+      '<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:600px;">' +
+      '<h3 style="color:#111827;">AutoPrint 数据待审批转正</h3>' +
+      '<p style="color:#475467;font-size:14px;">以下数据已入 staging（pending），请审批是否写入主表：</p>' +
+      '<table style="border-collapse:collapse;">' + rowsHtml + '</table>' +
+      '<p style="margin:20px 0;">' +
+      '<a href="' + approveUrl + '" style="background:#16a34a;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-size:15px;margin-right:12px;">✅ 批准转正</a>' +
+      '<a href="' + rejectUrl + '" style="background:#6b7280;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-size:15px;">❌ 拒绝</a>' +
+      '</p>' +
+      '<p style="color:#98a2b3;font-size:12px;">点击后会打开确认页，需再点一次按钮才会执行（防误触）。链接 72 小时后失效；过期或未处理可按 SOP §7 手动转正。</p>' +
+      '</div>';
+
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: Deno.env.get('ALERT_EMAIL_FROM') || 'onboarding@resend.dev',
+        to: [to],
+        subject: '[AutoPrint 待审批] ' + bjDay(inserted[0]['执行时间']) + ' 数据转正（' + ids.length + ' 条）',
+        html
+      })
+    });
+    if (!r.ok) throw new Error('resend ' + r.status + ' ' + (await r.text()).slice(0, 200));
+  } catch (e) {
+    await sendAlert('审批邮件发送失败', (e && e.message) || String(e));
   }
 }
 
@@ -428,7 +522,9 @@ Deno.serve(async (req) => {
         rec.conflict_action = 'check-error';
       }
       try {
-        await restInsert('report_autoprint_staging', [rec]);
+        const insertedBody = await restInsertReturning('report_autoprint_staging', [rec]);
+        // #35: approval email (best-effort; never throws)
+        await sendApprovalEmail(insertedBody);
         // D1: BODY wins — any attachments are archived raw but NOT parsed
         for (const a of atts) {
           try {
@@ -550,7 +646,9 @@ Deno.serve(async (req) => {
 
   if (stagingRows.length > 0) {
     try {
-      await restInsert('report_autoprint_staging', stagingRows);
+      const insertedRows = await restInsertReturning('report_autoprint_staging', stagingRows);
+      // #35: approval email (best-effort; never throws)
+      await sendApprovalEmail(insertedRows);
       const updates = stagingRows.filter((r) => r.conflict_action === 'update').length;
       return new Response('ok-staged-' + stagingRows.length + ' (update=' + updates + ')', OK);
     } catch (e) {
