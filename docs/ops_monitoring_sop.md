@@ -2,7 +2,7 @@
 
 > 适用范围：AutoPrint 邮件入库正式版（Webhook Relay → Edge Function `email_inbox_poc` → 临时表 → 主表 `ReportAutoPrint` → Resend 告警）
 > 适用读者：**非技术值班人员 / PM**。所有 SQL 均在 **Supabase 控制台 → SQL Editor** 粘贴执行。
-> 关联文档：`docs/email_ingest_方案设计_v1.0.md`；GitHub Issues #27/#28/#29/#30/#31
+> 关联文档：`docs/email_ingest_方案设计_v1.0.md`、`docs/design_multi_source_ingest_v1.0.md`（三源导入架构）；GitHub Issues #27/#28/#29/#30/#31/#34
 
 ---
 
@@ -17,9 +17,9 @@
 ## 1. 系统链路一览（一句话版）
 
 ```
-[业务邮箱] --发带 Excel 附件的邮件-->
+[业务邮箱] --发邮件（正文通知 或 Excel 附件）-->
 [Webhook Relay 收件地址] -->
-[Edge Function: email_inbox_poc] --解析--> report_autoprint_staging（临时表）
+[Edge Function: email_inbox_poc] --解析（正文优先，附件兜底）--> report_autoprint_staging（临时表）
                                             │
                               ┌─────────────┴─────────────┐
                          确认无误转正                  失败/异常
@@ -157,7 +157,27 @@ LIMIT 20;
 
 仅当 `report_autoprint_staging` 有**已确认无误**的 `pending` 数据需要写入主表时执行（建议 AI 代执行或复核）。业务规则：**每个业务日（北京时间）只能有一条记录**，主表已通过 `UNIQUE(execution_date)` 强制。转正去重键 = **业务日**（由 `执行时间` 换算：`(执行时间 AT TIME ZONE 'Asia/Shanghai')::date`，与约束同源），已存在则更新、不存在则插入。
 
+**同日冲突加权（三源架构，见 `design_multi_source_ingest_v1.0.md` §7）**：同一业务日有多条 pending 时，**Excel 附件 / API 来源（补导、更正）覆盖 邮件正文来源（日报）**；同渠道多条则后到（`received_at` 最新）优先。落选记录标 `status='superseded'` 保留审计，不进主表。
+
 ```sql
+-- ⓪ 同日冲突加权：同一业务日多条 pending 时先淘汰低优先级记录
+--    渠道优先级：XLSX/API（source_filename ≠ '(email_body)'）> BODY（= '(email_body)'）
+--    同渠道：received_at 最新者胜。落选者标 superseded（保留审计）。
+WITH ranked AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY (执行时间 AT TIME ZONE 'Asia/Shanghai')::date
+           ORDER BY (CASE WHEN source_filename = '(email_body)' THEN 1 ELSE 2 END) DESC,
+                    received_at DESC
+         ) AS rn
+  FROM report_autoprint_staging
+  WHERE status = 'pending' AND 执行时间 IS NOT NULL
+)
+UPDATE report_autoprint_staging s
+SET status = 'superseded'
+FROM ranked
+WHERE s.id = ranked.id AND ranked.rn > 1;
+
 -- ① 转正：staging(pending) → 主表 ReportAutoPrint
 -- ⚠️ 约束说明（已实测验证）：
 --   a) 耗时分钟 是 GENERATED ALWAYS 生成列（完成时间-执行时间），严禁手动插入，否则报 428C9；
@@ -262,3 +282,4 @@ FROM (
 | #29 | 邮件入库正式版生产验证 |
 | #30 | RLS Security Check CI 修复 |
 | #31 | 入库告警送达（Resend 403）修复 |
+| #34 | 邮件正文数据导入（三源架构，见 `design_multi_source_ingest_v1.0.md`） |
