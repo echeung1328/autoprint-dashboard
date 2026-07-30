@@ -1,11 +1,11 @@
 # SOP — 通过 Supabase MCP 上传/更新结构化数据到 Postgres 表
 
 > **文档名称**：Supabase MCP 数据上传技能 SOP（操作手册）
-> **版本**：v1.1（含 INSERT 与 UPDATE / upsert 双流程）
+> **版本**：v1.2（新增 §9 Edge Function 平台约束）
 > **适用技能**：`supabase-mcp-data-upload`
 > **适用对象**：ReportAutoPrint 月报数据（项目 `uvqjtvonxwsmhntnyest`，表 `public.ReportAutoPrint`），方法论可推广至其他表
 > **维护人**：Eric Zhang
-> **最后更新**：2026-07-08
+> **最后更新**：2026-07-30
 
 ---
 
@@ -170,6 +170,7 @@ FROM "<TABLE>" WHERE "CreatedBy"='<BATCH_TAG>' ORDER BY "执行时间" LIMIT 8;
 | 同标题记录被误删 | 去重用了 Title 单列 → 改回 `(Title+执行时间)` 复合键 |
 | 时间戳差 8 小时 | 未带 `+08:00` 偏移 → 写入时显式加时区 |
 | 部分行重复写入 | 未做冲突检测 → 执行前先 §5.4 |
+| Edge Function 页面在浏览器显示 HTML 源码（非渲染） | 默认 `*.supabase.co` 域名禁止返回 HTML，网关把 `text/html` 强制 rewrite 为 `text/plain` → 改用外部静态页 + 302 redirect（见 §9） |
 
 ## 8. 培训检查清单（Training checklist）
 - [ ] 能说出 MCP 前置条件（Trust + OAuth）验证方法
@@ -181,6 +182,42 @@ FROM "<TABLE>" WHERE "CreatedBy"='<BATCH_TAG>' ORDER BY "执行时间" LIMIT 8;
 - [ ] 能写出按复合键定位的 UPDATE
 - [ ] 能执行校验（COUNT + 抽样）并解读结果
 - [ ] 能使用批次标签做回退
+- [ ] 能说明「默认域名禁止 Edge Function 返回 HTML」及标准替代架构（外部静态页 + 302 redirect，见 §9）
+
+## 9. Supabase Edge Function 平台约束（必读，避免无效返工）
+
+> 来源：#35 邮件审批转正复盘（确认页 Content-Type 连续 4 轮返工的根因）。
+
+### 9.1 关键限制：默认域名禁止返回 HTML
+- **现象**：Edge Function 在默认 `*.supabase.co` 域名下，GET 返回 `text/html` 会被**网关强制 rewrite 为 `text/plain`**，浏览器因此把 HTML 当纯文本显示（看到的是源码，不是渲染页面）。
+- **官方说明**：只有在配置了**自定义域名**后，Edge Function 才能直接返回 HTML。
+- **后果**：无论怎么设置 `Content-Type` 响应头、把 body 转成 bytes、用 `Headers` 实例，都**无法**绕过——这是平台层行为，不是代码问题。本地 mock 集成测试（如 27/27 PASS）也**反映不了**此网关行为，不能作为"已修复"的证据。
+
+### 9.2 标准架构模板（需要返回 HTML/UI 时）
+不要试图让 Edge Function 直接渲染 HTML 页面。改为「外部静态页 + 302 redirect」：
+
+```
+用户/邮件链接 → Edge Function (GET, verify_jwt=false)
+                   │ 仅校验 token / 参数（零副作用）
+                   ▼ 302 redirect（带参数）
+              外部静态页 (GitHub Pages / Netlify / 自定义域名)
+                   │ 渲染 UI + 表单
+                   ▼ form POST
+              Edge Function (POST) → 执行逻辑 → 302 redirect 回结果页
+```
+
+- 外部静态页可放 GitHub Pages：`Settings → Pages → Source = Deploy from a branch → Branch = master → Folder = /docs`
+- Edge Function 读取 `APPROVAL_UI_URL` 等环境变量拼接 redirect 目标
+- GET 仍保持「零副作用」（仅校验 + 跳转），防企业邮箱安全网关（Safe Links 等）预点击误触
+
+### 9.3 部署注意
+- 外部调用（邮件点击）无 JWT → 部署必须 `--no-verify-jwt`
+- 密钥用 `PROJECT_` 前缀（CLI 护栏），避免 `SUPABASE_` 前缀被拒
+- 静态页变更需 `git push` 后等待 1–3 分钟 Pages 重新部署（注意本仓库主分支是 `master`，不是 `main`）
+
+### 9.4 验证（防再发）
+- UI 类函数部署后，**必须用真实浏览器验证渲染**（agent-browser 截图留痕），不能只靠本地 mock 集成测试 PASS 结案。
+- 在改 Response headers / 返回 HTML 前，先查官方文档或做最小实验确认平台是否支持该行为（「平台约束预检」）。
 
 ## 附录 A：数据质量规则（Data quality rules）
 1. 剔除表头串入的垃圾标题（`AutoPrint-执行时间` 等）。
