@@ -1,7 +1,8 @@
 # AutoPrint 系统 - 版本发布 SOP v1.0
 
-**文档版本**: V1.0
+**文档版本**: V1.1
 **创建日期**: 2026-07-09
+**修订日期**: 2026-07-30
 **作者**: 高级开发工程师
 **审核**: 待审核
 
@@ -13,6 +14,7 @@
   版本            日期            修改内容        作者
   --------------- --------------- --------------- ----------------
   V1.0            2026-07-09      初始版本        高级开发工程师
+  V1.1            2026-07-30      新增 develop/master 分支模型；部署改为 Netlify 手动发布（省免费额度）；发布前检查清单增补「线上已部署并验证」项；全文 Vercel 笔误修正为 Netlify        高级开发工程师
 
   ----------------------------------------------------------------
 
@@ -21,6 +23,13 @@
 ## 1. 概述
 
 本文档规定 AutoPrint 仪表盘每次上线新版本时的**版本记录规范**，确保团队成员能一致地追溯"这个版本改了什么、何时发布、由谁发布"。
+
+### 分支与部署模型（2026-07-30 引入）
+
+- **`develop`**：日常开发分支。所有功能开发、Bug 修复、进度提交都在此分支完成，可频繁 `git commit` / `git push`，**不会触发任何部署、不消耗 Netlify 额度**。
+- **`master`**：生产分支。仅在"功能完整、准备发版"时，将 `develop` 合并进来，再**手动部署**到 Netlify。
+- **Netlify 部署方式**：使用免费版、需节省构建额度，已**关闭自动发布**并关闭 Branch Deploys / Deploy Previews；上线一律走仪表盘 `Deploys → Trigger deploy → Deploy project without cache`（或 CLI `netlify deploy --prod`）。
+- **关键纪律**：本地（http://127.0.0.1:5500/）看到 ≠ 线上已生效。每次发版必须打开线上 URL 验证（详见第 4 节「发版前确认已部署」）。
 
 版本信息统一存放在 **Supabase `app_versions` 表**，并在仪表盘「📋 版本记录」Tab 中可视化展示。不依赖 GitHub Releases（纯 Web 应用无下载产物，Releases 不适用）。
 
@@ -58,23 +67,25 @@
 
 满足以下任一情况即应发布并记录一个版本：
 
-- 新功能合并到 `master` 并部署到 Vercel 生产环境
+- 新功能合并到 `master` 并**手动部署到 Netlify 生产环境**
 - 修复了影响用户使用的 Bug
 - 重大 UI/UX 调整、品牌规范更新
 - 数据表结构变更（如新增/调整 Supabase 表）
 
-**纯本地调试、未部署到生产**的改动**不需要**发版本。
+**纯本地调试、未部署到生产**的改动**不需要**发版本。注意：`develop` 分支上的日常提交只是进度记录，**不算发布**，无需发版本。
 
 ------------------------------------------------------------------------
 
 ## 4. 发布前检查清单
 
   ------------------------------------------------------------------
-  ☐  代码已本地 Go Live 测试通过，无控制台报错
-  ☐  `git add` / `git commit` 已完成并 `git push origin master`
-  ☐  Vercel 生产环境已自动部署完成（访问线上 URL 验证）
+  ☐  代码已在 `develop` 开发完成，并经本地 Go Live 测试通过（http://127.0.0.1:5500/ 无控制台报错）
+  ☐  `develop` 已 `git push` 同步到 GitHub（进度留痕）
+  ☐  已 `git checkout master` → `git merge develop` → `git push origin master`
+  ☐  Netlify 已手动部署完成：仪表盘 Deploys → Trigger deploy → **Deploy project without cache**（或 `netlify deploy --prod`）
+  ☑  【发版前确认已部署】已打开 https://autoprintreport.netlify.app 验证新功能/变更**确实生效**（防止"本地有、线上缺"的分叉，本次踩坑根因）
   ☐  相关 GitHub Issue 已关闭（commit message 引用 Issue 号）
-  ☐  下次提交哈希已确认（`git rev-parse --short HEAD`）
+  ☐  提交哈希已确认（`git rev-parse --short HEAD`），待写入版本记录
   ------------------------------------------------------------------
 
 ------------------------------------------------------------------------
@@ -139,18 +150,23 @@ VALUES (
 ## 8. 示例：一次完整发布流程
 
 ```
-1) 开发完成 → 本地 Go Live 测试通过
-2) git add index.html
-3) git commit -m "feat: XXX 功能 (Issue #23) ✅ 已在本地环境测试通过"
-4) git push origin master
-5) 访问 Vercel 线上 URL，确认功能正常
-6) git rev-parse --short HEAD   →  得到 e.g. a1b2c3d
-7) 仪表盘用 admin 登录 → 「版本记录」Tab → ➕ 记录新版本
-   版本号: 1.3.0
-   摘要:   XXX 功能上线（Issue #23）
-   Commit: a1b2c3d
-   发布人: Eric Zhang
-8) 关闭 GitHub Issue #23
+1) 在 develop 分支开发 → 本地 127.0.0.1:5500 测试通过
+2) git add .
+3) git commit -m "feat(#23): XXX 功能 ✅ 已在本地环境测试通过"
+4) git push                              # 推到 develop，不部署、不烧额度
+5) 重复 1-4 累积进度，直到功能完整
+6) git checkout master
+7) git merge develop
+8) git push origin master                # 代码上 master，但自动发布已关，尚未部署
+9) Netlify 仪表盘 Deploys → Trigger deploy → Deploy project without cache   # 手动部署
+10) 打开 https://autoprintreport.netlify.app 确认新功能已生效   ← 发版前确认已部署
+11) git rev-parse --short HEAD   →  得到 e.g. a1b2c3d
+12) 仪表盘用 admin 登录 → 「版本记录」Tab → ➕ 记录新版本
+    版本号: 1.3.0
+    摘要:   XXX 功能上线（Issue #23）
+    Commit: a1b2c3d
+    发布人: Eric Zhang
+13) 关闭 GitHub Issue #23
 ```
 
 ------------------------------------------------------------------------
