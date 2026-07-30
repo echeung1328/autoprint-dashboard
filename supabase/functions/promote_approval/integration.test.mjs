@@ -3,6 +3,12 @@
 // GET (302 redirect to external UI) / POST (execute + 302 redirect to result UI).
 //
 // Run: node integration.test.mjs
+//
+// ⚠️ 重要边界（见 docs/platform_constraints_preckeck.md #40）：
+// 本测试用 mock fetch/Response，只验证函数逻辑（token 校验、302 跳转、RPC 调用）。
+// 它**不覆盖 Supabase 网关的 Content-Type rewrite 等平台行为**（例如默认域名禁止
+// 返回 HTML —— #35 根因）。涉及 UI/HTML 的函数，部署后必须走
+// docs/deploy_verification_checklist_v1.0.md §3.3 的 agent-browser 真实浏览器验证。
 import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { join, dirname } from 'path';
