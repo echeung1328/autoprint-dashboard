@@ -1,7 +1,8 @@
 # AutoPrint 系统 - 部署运维手册 v1.0
 
-**文档版本**: V1.0\
+**文档版本**: V1.1\
 **创建日期**: 2026-06-30\
+**修订日期**: 2026-07-30\
 **作者**: 高级开发工程师\
 **审核**: 待审核
 
@@ -13,6 +14,7 @@
   版本            日期            修改内容        作者
   --------------- --------------- --------------- ----------------
   V1.0            2026-06-30      初始版本        高级开发工程师
+  V1.1            2026-07-30      对齐实际部署策略：Netlify 改手动部署(自动发布关闭省额度)；新增 Vercel 后备平台(Ignored Build Step 仅构建 production)；明确 develop/master 分支模型；修正"自动部署(推荐)"为按需手动部署        高级开发工程师
 
   ----------------------------------------------------------------
 
@@ -38,8 +40,8 @@
 
 **系统组成**: - **前端**: HTML + JavaScript 静态页面（Netlify 托管） -
 **后端**: Supabase（数据库 + Auth + API） - **代码仓库**: GitHub
-(echeung1328/autoprint-dashboard) - **CI/CD**: GitHub Actions + Netlify
-Auto-deploy
+(echeung1328/autoprint-dashboard) - **CI/CD**: 无自动部署 GitHub
+Action（仓库仅含 Supabase RLS 安全检查，非部署）；Netlify **手动部署**（自动发布已关闭以节省免费额度，发版时仪表盘 Trigger deploy）；Vercel 作**后备平台**（Ignored Build Step 仅构建 production 分支，故障切换用）
 
 ------------------------------------------------------------------------
 
@@ -74,47 +76,78 @@ Auto-deploy
 ### 2.2 环境划分
 
   -------------------------------------------------------------------------------------
-  环境            用途            URL                                   分支
-  --------------- --------------- ------------------------------------- ---------------
-  生产环境        正式使用        https://autoprintreport.netlify.app   master
+  环境            用途            URL                                   分支            部署方式
+  --------------- --------------- ------------------------------------- --------------- -------------------------------
+  生产环境(主)    正式使用        https://autoprintreport.netlify.app   master          手动部署(自动发布关闭，发版时 Trigger deploy → Deploy without cache)
 
-  预发布环境      测试验证        可选配置                              develop
+  后备环境        Netlify 故障时   https://autoprint-dashboard.vercel.app master         生产分支推送即自动构建(Ignored Build Step 放行)
 
-  开发环境        本地开发        localhost                             feature/\*
+  开发环境        本地开发/记进度  http://127.0.0.1:5500                develop/feature/\* 不部署(零额度)；仅本地 Live Server 预览
   -------------------------------------------------------------------------------------
+
+> **关键约定**：`develop` 分支**永不自动部署**（Netlify 已关 Branch Deploys/Deploy Previews，Vercel 的 Ignored Build Step 跳过非 production 分支）。日常改动都在 `develop` 上频繁 commit/push，不消耗任何平台额度；只有合并到 `master` 并手动触发后，线上才更新。
 
 ------------------------------------------------------------------------
 
 ## 3. 部署流程
 
-### 3.1 前端部署（Netlify）
+### 3.1 前端部署（双平台：Netlify 主 + Vercel 备）
 
-#### 3.1.1 自动部署（推荐）
+#### 3.1.1 分支策略与部署模型
 
-**触发条件**: 推送到 `master` 分支
+  -------------------------------------------------------------------------------------
+  分支            日常操作                          部署行为
+  --------------- --------------------------------- -------------------------------
+  `develop`       功能开发、Bug 修复、频繁 commit    不部署、不消耗额度（本地 5500 预览）
+  `master`        发版时合并 develop 后手动触发       Netlify 手动部署 + Vercel 自动构建
+  -------------------------------------------------------------------------------------
 
-**部署步骤**: 1. 开发者提交代码到 GitHub
-`bash    git add .    git commit -m "feat: ``添加新功能"``    git push origin master`
+**为什么这样设计**：Netlify 免费版构建额度有限，且日常本地频繁改动，故关闭自动发布、按需手动部署；Vercel 作故障切换后备，平时不主动访问，仅当 Netlify 不可用时启用其域名。
 
-2.  Netlify 自动检测到推送
-    - 拉取最新代码
-    - 执行构建命令（如有）
-    - 部署到 CDN
-3.  部署完成
-    - 收到 Netlify 邮件通知
-    - 访问 https://autoprintreport.netlify.app 验证
+**日常开发节奏（诉求：频繁 commit 记进度 + 省额度）**:
 
-**部署时间**: 通常 1-2 分钟
+    # 在 develop 分支
+    git checkout develop
+    git add .
+    git commit -m "feat(#42): 添加XX功能 ✅ 已在本地环境测试通过"
+    git push            # 仅推进度，不部署、不烧额度
 
-#### 3.1.2 手动部署（紧急情况）
+#### 3.1.2 手动部署到生产（Netlify，主要方式）
 
-    # 在 Netlify 仪表盘操作
+**触发条件**: 发版时，将 `develop` 合并到 `master` 后**手动触发**（非自动）。
+
+**部署步骤**:
+
+    # 1. 合并开发分支
+    git checkout master
+    git merge develop
+    git push origin master
+
+    # 2. 在 Netlify 仪表盘手动部署
     1. 访问 https://app.netlify.com
     2. 选择 "autoprint-dashboard" 站点
     3. 点击 "Deploys" 标签
-    4. 点击 "Trigger deploy" → "Clear cache and deploy site"
+    4. 点击 "Trigger deploy" → "Deploy project without cache"
+    5. 等待 1-2 分钟，访问 https://autoprintreport.netlify.app 验证
 
-#### 3.1.3 回滚部署
+> **重要纪律**：本地（http://127.0.0.1:5500/）看到 ≠ 线上已生效。部署后必须打开线上 URL 确认新功能确实生效（防止"本地有、线上缺"的分叉，详见版本发布 SOP 第 4 节「发版前确认已部署」）。
+
+#### 3.1.3 后备部署（Vercel）
+
+Vercel 已导入同一 GitHub 仓库 `autoprint-dashboard`，作为 Netlify 的故障切换后备。
+
+**配置要点**（已在 Vercel 仪表盘完成）:
+
+  - Settings → Environments：Production 跟踪 `master`，Preview 跟踪所有其他分支
+  - Settings → Build and Deployment → Ignored Build Step：
+    - Behavior = `Only build production`
+    - Command = `if [ "$VERCEL_ENV" == "production" ]; then exit 1; else exit 0; fi`
+    - 效果：push 到 `develop`（preview 环境）→ 脚本 exit 0 → 跳过构建；push 到 `master`（production 环境）→ 脚本 exit 1 → 正常构建
+
+**后备启用方式**：当 Netlify 不可用时，直接访问 Vercel 生产域名
+https://autoprint-dashboard.vercel.app 即可（master 推送已自动同步）。如需长期使用，可在 DNS 将自定义域名指向 Vercel。
+
+#### 3.1.4 回滚部署
 
     # 在 Netlify 仪表盘操作
     1. 访问 "Deploys" 标签
@@ -190,7 +223,7 @@ https://supabase.com/dashboard/project/uvqjtvonxwsmhntnyest/settings/api
     SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 **添加步骤**: 1. 点击 "Add a variable" 2. 输入 Key 和 Value 3.
-选择部署上下文（Production / Deploy previews / Branch deploys） 4. 点击
+选择部署上下文（当前仅 **Production** 生效；Deploy previews / Branch deploys 已关闭以节省额度） 4. 点击
 "Save"
 
 ------------------------------------------------------------------------
@@ -469,11 +502,18 @@ backup"
 
 ### 9.1 常用命令速查表
 
-    # GitHub 操作
+    # GitHub 操作（日常在 develop 分支）
+    git checkout develop            # 切换到开发分支
     git status                      # 查看状态
     git add .                       # 添加所有改动
-    git commit -m "message"         # 提交
-    git push origin master          # 推送到远程
+    git commit -m "message"         # 提交（频繁 commit 记进度，不部署）
+    git push                        # 推送到 origin/develop（已设 upstream）
+
+    # 发版时合并到 master 并部署
+    git checkout master
+    git merge develop
+    git push origin master          # 代码上 master（Netlify 自动发布已关，尚未部署）
+    # 随后在 Netlify 仪表盘 Trigger deploy → Deploy without cache
 
     # Netlify CLI（如已安装）
     netlify status                  # 查看部署状态
@@ -495,11 +535,15 @@ backup"
 
 ### 9.3 检查清单
 
-**部署前检查**: - \[ \] 代码已通过测试 - \[ \] 环境变量已配置 - \[ \]
-数据库迁移脚本已验证 - \[ \] 备份已完成
+**发版前检查**: - \[ \] 代码已在 develop 测试通过（本地 127.0.0.1:5500） - \[ \]
+develop 已合并到 master 并 push - \[ \] 部署方式已确认（Netlify 手动
+Trigger deploy → Deploy without cache；Vercel 后备随 master 自动构建）
 
-**部署后验证**: - \[ \] 页面可以正常访问 - \[ \] 数据加载正常 - \[ \]
-认证功能正常 - \[ \] 响应式布局正常 - \[ \] 控制台没有错误
+**部署后验证**: - \[ \] **打开 https://autoprintreport.netlify.app
+确认新功能/变更确实生效**（防止"本地有、线上缺"分叉） - \[ \]
+数据加载正常 - \[ \] 认证功能正常 - \[ \] 响应式布局正常 - \[ \]
+控制台没有错误 - \[ \] （如启用 Vercel 后备）打开
+https://autoprint-dashboard.vercel.app 确认已同步
 
 ------------------------------------------------------------------------
 
