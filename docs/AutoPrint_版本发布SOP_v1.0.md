@@ -14,7 +14,7 @@
   版本            日期            修改内容        作者
   --------------- --------------- --------------- ----------------
   V1.0            2026-07-09      初始版本        高级开发工程师
-  V1.1            2026-07-30      新增 develop/master 分支模型；部署改为 Netlify 手动发布（省免费额度）；发布前检查清单增补「线上已部署并验证」项；全文 Vercel 笔误修正为 Netlify        高级开发工程师
+  V1.1            2026-07-30      新增 develop/master 分支模型；明确 Netlify 主生产 + Vercel 后备双平台；发布前检查清单增补「线上已部署并验证」项        高级开发工程师
 
   ----------------------------------------------------------------
 
@@ -26,10 +26,11 @@
 
 ### 分支与部署模型（2026-07-30 引入）
 
-- **`develop`**：日常开发分支。所有功能开发、Bug 修复、进度提交都在此分支完成，可频繁 `git commit` / `git push`，**不会触发任何部署、不消耗 Netlify 额度**。
-- **`master`**：生产分支。仅在"功能完整、准备发版"时，将 `develop` 合并进来，再**手动部署**到 Netlify。
-- **Netlify 部署方式**：使用免费版、需节省构建额度，已**关闭自动发布**并关闭 Branch Deploys / Deploy Previews；上线一律走仪表盘 `Deploys → Trigger deploy → Deploy project without cache`（或 CLI `netlify deploy --prod`）。
-- **关键纪律**：本地（http://127.0.0.1:5500/）看到 ≠ 线上已生效。每次发版必须打开线上 URL 验证（详见第 4 节「发版前确认已部署」）。
+- **`develop`**：日常开发分支。所有功能开发、Bug 修复、进度提交都在此分支完成，可频繁 `git commit` / `git push`，**不会触发任何部署、不消耗额度**。
+- **`master`**：生产分支。仅在"功能完整、准备发版"时，将 `develop` 合并进来，再**手动部署**到生产平台。
+- **Netlify（主生产）**：使用免费版、需节省构建额度，已**关闭自动发布**并关闭 Branch Deploys / Deploy Previews；上线一律走仪表盘 `Deploys → Trigger deploy → Deploy project without cache`（或 CLI `netlify deploy --prod`）。主域名 https://autoprintreport.netlify.app。
+- **Vercel（后备）**：同一份静态站点（`index.html`）同时部署到 Vercel 作为**故障切换 / 后备**。将同一个 GitHub 仓库（`autoprint-dashboard`）导入 Vercel 即可，产出与 Netlify 完全一致；当 Netlify 不可用或需切换时，用 Vercel 域名作临时入口（或改 DNS 指向 Vercel）。Vercel 同样建议关闭自动发布、按需手动部署以省额度。
+- **关键纪律**：本地（http://127.0.0.1:5500/）看到 ≠ 线上已生效。每次发版必须打开线上 URL 验证（详见第 4 节「发版前确认已部署」）；Netlify 与 Vercel 两个环境都需分别确认已部署生效。
 
 版本信息统一存放在 **Supabase `app_versions` 表**，并在仪表盘「📋 版本记录」Tab 中可视化展示。不依赖 GitHub Releases（纯 Web 应用无下载产物，Releases 不适用）。
 
@@ -67,7 +68,7 @@
 
 满足以下任一情况即应发布并记录一个版本：
 
-- 新功能合并到 `master` 并**手动部署到 Netlify 生产环境**
+- 新功能合并到 `master` 并**手动部署到 Netlify 主生产环境**（按需同步 Vercel 后备）
 - 修复了影响用户使用的 Bug
 - 重大 UI/UX 调整、品牌规范更新
 - 数据表结构变更（如新增/调整 Supabase 表）
@@ -83,7 +84,7 @@
   ☐  `develop` 已 `git push` 同步到 GitHub（进度留痕）
   ☐  已 `git checkout master` → `git merge develop` → `git push origin master`
   ☐  Netlify 已手动部署完成：仪表盘 Deploys → Trigger deploy → **Deploy project without cache**（或 `netlify deploy --prod`）
-  ☑  【发版前确认已部署】已打开 https://autoprintreport.netlify.app 验证新功能/变更**确实生效**（防止"本地有、线上缺"的分叉，本次踩坑根因）
+  ☑  【发版前确认已部署】已打开 https://autoprintreport.netlify.app（主站）验证新功能/变更**确实生效**；若启用 Vercel 后备，也需打开其域名确认已同步部署（防止"本地有、线上缺"的分叉，本次踩坑根因）
   ☐  相关 GitHub Issue 已关闭（commit message 引用 Issue 号）
   ☐  提交哈希已确认（`git rev-parse --short HEAD`），待写入版本记录
   ------------------------------------------------------------------
@@ -158,15 +159,16 @@ VALUES (
 6) git checkout master
 7) git merge develop
 8) git push origin master                # 代码上 master，但自动发布已关，尚未部署
-9) Netlify 仪表盘 Deploys → Trigger deploy → Deploy project without cache   # 手动部署
+9) Netlify 仪表盘 Deploys → Trigger deploy → Deploy project without cache   # 手动部署（主站）
 10) 打开 https://autoprintreport.netlify.app 确认新功能已生效   ← 发版前确认已部署
-11) git rev-parse --short HEAD   →  得到 e.g. a1b2c3d
-12) 仪表盘用 admin 登录 → 「版本记录」Tab → ➕ 记录新版本
+11) （若启用 Vercel 后备）Vercel 仪表盘触发 Deploy 或 `vercel --prod`，并打开 Vercel 域名确认同步生效
+12) git rev-parse --short HEAD   →  得到 e.g. a1b2c3d
+13) 仪表盘用 admin 登录 → 「版本记录」Tab → ➕ 记录新版本
     版本号: 1.3.0
     摘要:   XXX 功能上线（Issue #23）
     Commit: a1b2c3d
     发布人: Eric Zhang
-13) 关闭 GitHub Issue #23
+14) 关闭 GitHub Issue #23
 ```
 
 ------------------------------------------------------------------------
