@@ -1092,8 +1092,12 @@ function animateKpiValues() {
 }
 
 function getTrendBadge(records, type) {
+  // 暂时隐藏 KPI 卡片百分比趋势：切换“统计频率”时，前后半段的对比含义容易让用户混淆
+  // 后续如需恢复，删除下方 return '' 即可
+  return '';
+
   if (!records || records.length < 2) return '';
-  
+
   // Split records into first half and second half
   const mid = Math.floor(records.length / 2);
   const firstHalf = records.slice(0, mid);
