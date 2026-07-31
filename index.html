@@ -1153,28 +1153,38 @@ function renderPeakMonthlyChart(byMonth) {
 
 function animateKpiValues() {
   const kpiValues = document.querySelectorAll('.kpi-value[data-target]');
+  // 暂时停止 KPI 数字滚动动画：切换“统计频率”时反复从 0 滚动让看者不舒服
+  // 直接写入最终值，跳过 requestAnimationFrame 动画。后续如需恢复，删除下方 return 及此前整段赋值即可
+  kpiValues.forEach(el => {
+    const target = parseFloat(el.getAttribute('data-target')) || 0;
+    const isFloat = target % 1 !== 0;
+    el.textContent = isFloat ? target.toFixed(1) : target.toLocaleString();
+  });
+  return;
+
+  // ===== 以下为原滚动动画实现，保留以便恢复 =====
   kpiValues.forEach(el => {
     const target = parseFloat(el.getAttribute('data-target')) || 0;
     const isFloat = target % 1 !== 0;
     const duration = 1200;
     const startTime = performance.now();
-    
+
     function update(currentTime) {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
       // Ease out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = eased * target;
-      
+
       el.textContent = isFloat ? current.toFixed(1) : Math.floor(current).toLocaleString();
-      
+
       if (progress < 1) {
         requestAnimationFrame(update);
       } else {
         el.textContent = isFloat ? target.toFixed(1) : target.toLocaleString();
       }
     }
-    
+
     requestAnimationFrame(update);
   });
 }
