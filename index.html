@@ -606,6 +606,93 @@ async function loadVersions() {
   }
 }
 
+// 轻量 Markdown 解析器：将 changes_summary 字符串渲染为分组 HTML
+// 支持语法：## 类别标题 / - 项目符号 / (#N) Issue 引用（自动转可点击链接）
+// 向后兼容：无 ## 标题的旧记录自动降级为纯文本段落
+const CATEGORY_STYLES = [
+  { match: ['新增', '新功能'],           color: '#185FA5', name: '新增功能' },
+  { match: ['优化', '运维'],             color: '#0F6E56', name: '优化 & 运维' },
+  { match: ['缺陷', '修复', 'Bug', 'bug'], color: '#A32D2D', name: '缺陷修复' },
+  { match: ['文档', '规范'],             color: '#5F5E5A', name: '文档与规范' }
+];
+const COLLAPSE_THRESHOLD = 6;
+
+function detectCategory(header) {
+  return CATEGORY_STYLES.find(c => c.match.some(k => header.includes(k))) || null;
+}
+
+function processItemText(text, repo) {
+  // (#24) → <a href="github.../issues/24">#24</a>
+  const parts = text.split(/(\(\#\d+\))/g);
+  return parts.map(p => {
+    const m = p.match(/^\(#(\d+)\)$/);
+    if (m) {
+      return '<a href="https://github.com/' + repo + '/issues/' + m[1] + '" target="_blank" rel="noopener" style="color:#534AB7; text-decoration:none; font-family:monospace; background:#EEEDFE; padding:0 4px; border-radius:3px;">#' + m[1] + '</a>';
+    }
+    return escapeHtml(p);
+  }).join('');
+}
+
+function parseSummaryToHtml(text, repo) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const groups = [];
+  let current = null;
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith('## ')) {
+      const cat = detectCategory(t.substring(3));
+      if (cat) { current = { cat, items: [] }; groups.push(current); }
+      else { current = null; }
+    } else if (current && (t.startsWith('- ') || t.startsWith('* '))) {
+      current.items.push(t.substring(2));
+    } else if (current) {
+      current.items.push(t);
+    }
+  }
+
+  // 向后兼容：未识别到 ## 标题时降级为纯文本
+  if (groups.length === 0) {
+    return '<div style="font-size:14px; color:#334155; line-height:1.7;">' + escapeHtml(text).replace(/\n/g, '<br>') + '</div>';
+  }
+
+  const totalItems = groups.reduce((s, g) => s + g.items.length, 0);
+  const needsCollapse = totalItems > COLLAPSE_THRESHOLD;
+  const cid = 'vs' + Math.random().toString(36).slice(2, 8);
+
+  let html = '<div id="' + cid + '">';
+  html += '<div style="display:inline-flex; align-items:center; font-size:12px; color:#534AB7; background:#EEEDFE; padding:3px 10px; border-radius:6px; margin-bottom:12px; font-weight:500;">' + groups.length + ' 个分类 · ' + totalItems + ' 项变更</div>';
+
+  let visibleCount = 0;
+  groups.forEach((g, gIdx) => {
+    const groupHidden = needsCollapse && visibleCount >= COLLAPSE_THRESHOLD;
+    visibleCount += g.items.length;
+    const display = groupHidden ? 'display:none;' : '';
+    html += '<div data-group-idx="' + gIdx + '" style="' + display + 'margin-bottom:14px;">';
+    html += '<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">' +
+            '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:' + g.cat.color + ';"></span>' +
+            '<span style="font-size:13px; font-weight:500; color:' + g.cat.color + ';">' + g.cat.name + '</span>' +
+            '<span style="font-size:12px; color:#888780;">· ' + g.items.length + ' 项</span>' +
+            '</div>';
+    html += '<ul style="margin:0; padding-left:18px; font-size:13px; color:#444441; line-height:1.7;">';
+    g.items.forEach(item => {
+      html += '<li>' + processItemText(item, repo) + '</li>';
+    });
+    html += '</ul></div>';
+  });
+
+  if (needsCollapse) {
+    html += '<button onclick="document.getElementById(\'' + cid + '\').querySelectorAll(\'[data-group-idx]\').forEach(e => e.style.display=\'block\'); this.style.display=\'none\';" ' +
+            'style="font-size:12px; color:#534AB7; background:#EEEDFE; border:none; padding:4px 12px; border-radius:6px; cursor:pointer; margin-top:4px;">' +
+            '📖 查看全部 ' + totalItems + ' 项</button>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function renderVersionsTimeline(rows) {
   const items = rows.map((r, i) => {
     const latest = i === 0;
@@ -620,7 +707,7 @@ function renderVersionsTimeline(rows) {
             ${latest ? '<span style="font-size:12px; font-weight:600; color:#fff; background:#002FA7; padding:2px 10px; border-radius:999px;">最新</span>' : ''}
             <span style="font-size:13px; color:#64748b;">🗓️ ${formatDate(r.released_at)}</span>
           </div>
-          <div style="font-size:14px; color:#334155; line-height:1.7;">${escapeHtml(r.changes_summary)}</div>
+          ${parseSummaryToHtml(r.changes_summary, 'echeung1328/autoprint-dashboard')}
           <div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:#94a3b8;">
             ${r.commit_hash ? '<span>🔗 commit: <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;">' + escapeHtml(r.commit_hash) + '</code></span>' : ''}
             ${r.deployed_by ? '<span>👤 ' + escapeHtml(r.deployed_by) + '</span>' : ''}
