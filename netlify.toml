@@ -1,22 +1,149 @@
-# Netlify 配置 - 手动部署模式
+# Netlify 配置 - 手动部署模式 + 安全加固 (2026-07-31 安全评估)
 # 注意：需要在 Netlify 仪表板中禁用自动发布
 # 路径：Site settings → Build & deploy → Deployment → Stop auto-publishing
+#
+# 安全变更说明（详见 docs/security_audit_2026-07-31.md）：
+#   [SEC-01] publish 由 "." 改为 "public"（白名单发布），避免把整个仓库
+#            （.git/、docs/、supabase/、源数据 CSV/XLSX、运维脚本）发到公网。
+#            构建命令只把真正需要对外的静态资产复制进 public/。
+#   [SEC-02] 新增安全响应头（CSP / HSTS / X-Frame-Options 等）。
+#   [SEC-03] 纵深防御：即使发布目录被误改回 ".", 下面的 force 规则也会
+#            把敏感路径强制拦成 404。
 
 [build]
-  # 正常构建配置（当手动触发时）
-  command = "echo 'Site is static - no build required'"
-  publish = "."
-  
-  # 如果需要构建步骤，取消注释下面一行
-  # command = "npm run build"
-  # publish = "dist"
+  # 白名单构建：只发布明确列出的对外资产
+  command = "rm -rf public && mkdir -p public && cp index.html public/index.html"
+  publish = "public"
 
-# 环境变量示例（如需要）
 [build.environment]
   NODE_VERSION = "18"
 
-# 重定向规则（可选）
+# ---------------------------------------------------------------------------
+# [SEC-03] 敏感路径强制拦截（纵深防御，force=true 会覆盖同名真实文件）
+# ---------------------------------------------------------------------------
+[[redirects]]
+  from = "/.git/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/supabase/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/scripts/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/source_data/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/shots/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/docs/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.github/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.md"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.csv"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.xlsx"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.docx"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.pptx"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.py"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.sql"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.toml"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.sh"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.bat"
+  to = "/index.html"
+  status = 404
+  force = true
+
+# SPA 兜底（必须放在所有 force 规则之后）
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# ---------------------------------------------------------------------------
+# [SEC-02] 安全响应头
+# CSP 说明：index.html 目前大量使用内联 <script>/onclick，因此暂时保留
+#          'unsafe-inline'。下一迭代把内联脚本抽成外部文件后，改为
+#          nonce/hash 模式并删除 'unsafe-inline'（见审计报告 SEC-07）。
+# ---------------------------------------------------------------------------
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://uvqjtvonxwsmhntnyest.supabase.co wss://uvqjtvonxwsmhntnyest.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Resource-Policy = "same-origin"
+    X-Permitted-Cross-Domain-Policies = "none"

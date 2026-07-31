@@ -30,7 +30,32 @@ const EXP_BASIC = btoa(BU + ':' + BP);
 const OK = { status: 200 };
 const E401 = { status: 401 };
 const E400 = { status: 400 };
+const E413 = { status: 413 };
 const E500 = { status: 500 };
+
+// [SEC-10] 请求体大小上限：附件以 base64 原样落 email_raw_archive，
+// 无上限时单封超大邮件即可撑爆库表 / 打满函数内存（DoS + 成本放大）。
+const MAX_BODY_BYTES = 15 * 1024 * 1024; // 15 MB
+
+// [SEC-11] 恒定时间字符串比较，避免用 !== 比较凭证时泄漏时序信息。
+function timingSafeEqual(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const la = a.length;
+  const lb = b.length;
+  const n = Math.max(la, lb);
+  let diff = la ^ lb;
+  for (let i = 0; i < n; i++) {
+    diff |= (a.charCodeAt(i % (la || 1)) | 0) ^ (b.charCodeAt(i % (lb || 1)) | 0);
+  }
+  return diff === 0;
+}
+
+// [SEC-09] 对外只回通用错误码，详细原因写日志/告警/ingest_alert_log，
+// 避免把 Supabase REST 的原始报错（表名、字段、策略信息）回给调用方。
+function opaque(code: string, detail: string, init: { status: number }): Response {
+  console.log('err', code, detail);
+  return new Response(code, init);
+}
 
 // ---- failure alerting (config-driven; never blocks the main flow) ----
 // Email path: set Supabase Secrets RESEND_API_KEY + ALERT_EMAIL_TO (optional ALERT_EMAIL_FROM).
@@ -442,25 +467,39 @@ Deno.serve(async (req) => {
   try {
     checkEnv();
   } catch (e) {
-    return new Response('ENV ' + e.message, E500);
+    // [SEC-09] 不回显缺失的具体环境变量名
+    return opaque('CONFIG_ERROR', 'ENV ' + e.message, E500);
   }
 
+  // [SEC-11] Basic Auth 恒定时间比较
   const auth = req.headers.get('authorization');
-  if (!auth || !auth.toLowerCase().startsWith('basic ') || auth.slice(6).trim() !== EXP_BASIC) {
+  if (!auth || !auth.toLowerCase().startsWith('basic ') || !timingSafeEqual(auth.slice(6).trim(), EXP_BASIC)) {
     return new Response('auth-fail', E401);
+  }
+
+  // [SEC-10] 先看 Content-Length 快速拒绝超大请求
+  const declaredLen = Number(req.headers.get('content-length') || '0');
+  if (declaredLen > MAX_BODY_BYTES) {
+    return opaque('PAYLOAD_TOO_LARGE', 'content-length=' + declaredLen, E413);
   }
 
   let body = '';
   try {
     body = await req.text();
   } catch (e) {
-    return new Response('read-fail ' + e.message, E400);
+    return opaque('BAD_REQUEST', 'read-fail ' + e.message, E400);
+  }
+  if (body.length > MAX_BODY_BYTES) {
+    return opaque('PAYLOAD_TOO_LARGE', 'body=' + body.length, E413);
   }
   let p: any;
   try {
     p = JSON.parse(body);
   } catch (e) {
-    return new Response('invalid-json', E400);
+    return opaque('BAD_REQUEST', 'invalid-json', E400);
+  }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) {
+    return opaque('BAD_REQUEST', 'payload-not-object', E400);
   }
 
   const from = (p.from || '').toLowerCase();
@@ -545,7 +584,8 @@ Deno.serve(async (req) => {
         return new Response('ok-staged-body-1' + (atts.length ? ' (atts-skipped=' + atts.length + ')' : ''), OK);
       } catch (e) {
         await sendAlert('写入 staging 失败(BODY)', e.message);
-        return new Response('STAGE_FAIL(body) ' + e.message, E500);
+        // [SEC-09] 详细原因已进告警与 ingest_alert_log，对外只回错误码
+        return opaque('STAGE_FAIL_BODY', e.message, E500);
       }
     } else if (br.guardMatched) {
       // notification-shaped body but broken (L3) -> archive parse_error + alert, then fall back to attachments
@@ -653,12 +693,13 @@ Deno.serve(async (req) => {
       return new Response('ok-staged-' + stagingRows.length + ' (update=' + updates + ')', OK);
     } catch (e) {
       await sendAlert('写入 staging 失败', e.message);
-      return new Response('STAGE_FAIL ' + e.message, E500);
+      // [SEC-09] 详细原因已进告警与 ingest_alert_log，对外只回错误码
+      return opaque('STAGE_FAIL', e.message, E500);
     }
   }
   if (parseErrors.length > 0) {
     await sendAlert('解析失败', parseErrors.join(' | '));
-    return new Response('ok-no-rows; parse-errors: ' + parseErrors.join(' | '), E500);
+    return opaque('PARSE_ERROR', parseErrors.join(' | '), E500);
   }
   // blind-spot fix (issue #27): attachment present but 0 rows parsed ->
   // likely empty table / header-only / header columns not matching SOP mapping.

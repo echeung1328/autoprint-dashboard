@@ -4,8 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AutoPrint 执行报告仪表盘</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<!-- [SEC-08] SRI + crossorigin：CDN 被投毒/劫持时浏览器会拒绝执行被篡改的脚本 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"
+        integrity="sha384-z2hqtpr/vSDZ8zSjLOiNgnR/mpU799AD93s6rvkNJLI6Hl0YlKXEhDtREzNT749S"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+        integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
   * { margin:0; padding:0; box-sizing: border-box; }
   body { font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif; background: #f0f4f8; color: #333; min-height: 100vh; }
@@ -995,7 +1000,9 @@ function renderFailTable(grouped) {
   let rows = '';
   dates.forEach(date => {
     grouped[date].failures.forEach(f => {
-      rows += `<tr><td>${new Date(f.time).toLocaleString('zh-CN')}</td><td>${f.title}</td><td>${f.total}</td><td><span class="badge-fail">${f.fail}</span></td><td>失败</td></tr>`;
+      // [SEC-04] f.title 来自邮件入库链路（外部可影响），必须转义后再拼 HTML，
+      // 否则构成存储型 XSS：恶意标题 -> 主表 -> 仪表盘执行任意脚本 -> 盗取已登录用户会话。
+      rows += `<tr><td>${escapeHtml(new Date(f.time).toLocaleString('zh-CN'))}</td><td>${escapeHtml(f.title)}</td><td>${escapeHtml(f.total)}</td><td><span class="badge-fail">${escapeHtml(f.fail)}</span></td><td>失败</td></tr>`;
     });
   });
   if (!rows) rows = '<tr><td colspan="5" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
@@ -1241,7 +1248,8 @@ async function loadUsers() {
   const { data, error } = await supabase.rpc('get_all_profiles');
   
   if (error) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:#ef4444;">加载失败：${error.message}</td></tr>`;
+    // [SEC-05] 错误对象内容不可信，转义后再渲染
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:#ef4444;">加载失败：${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   
@@ -1252,21 +1260,49 @@ async function loadUsers() {
   
   tbody.innerHTML = '';
   data.forEach(user => {
+    // [SEC-06] email / role 由用户自助注册时提供，属不可信输入。
+    // 原实现把它们直接插进 innerHTML 且拼进 onclick="...('${user.email}')"，
+    // 构成管理员面板存储型 XSS + 属性注入（攻击者注册一个恶意邮箱即可在
+    // 管理员浏览器里以管理员身份执行脚本，直接自我提权）。
+    // 修复：文本一律用 textContent，事件一律用 addEventListener。
     const tr = document.createElement('tr');
-    const statusBadge = user.approved 
-      ? '<span class="status-badge status-approved">已批准</span>'
-      : '<span class="status-badge status-pending">待审批</span>';
-    const actions = user.approved
-      ? '<span style="color:#10b981; font-weight:600;">✅ 已批准</span>'
-      : `<button class="btn-approve" onclick="approveUser('${user.id}', '${user.email}')">批准</button><button class="btn-reject" onclick="rejectUser('${user.id}', '${user.email}')">拒绝</button>`;
-    
-    tr.innerHTML = `
-      <td>${user.email}</td>
-      <td>${user.role || 'viewer'}</td>
-      <td>${user.created_at ? new Date(user.created_at).toLocaleString('zh-CN') : '--'}</td>
-      <td>${statusBadge}</td>
-      <td>${actions}</td>
-    `;
+
+    const tdEmail = document.createElement('td');
+    tdEmail.textContent = user.email || '';
+
+    const tdRole = document.createElement('td');
+    tdRole.textContent = user.role || 'viewer';
+
+    const tdCreated = document.createElement('td');
+    tdCreated.textContent = user.created_at ? new Date(user.created_at).toLocaleString('zh-CN') : '--';
+
+    const tdStatus = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = user.approved ? 'status-badge status-approved' : 'status-badge status-pending';
+    badge.textContent = user.approved ? '已批准' : '待审批';
+    tdStatus.appendChild(badge);
+
+    const tdActions = document.createElement('td');
+    if (user.approved) {
+      const ok = document.createElement('span');
+      ok.style.color = '#10b981';
+      ok.style.fontWeight = '600';
+      ok.textContent = '✅ 已批准';
+      tdActions.appendChild(ok);
+    } else {
+      const btnA = document.createElement('button');
+      btnA.className = 'btn-approve';
+      btnA.textContent = '批准';
+      btnA.addEventListener('click', () => approveUser(user.id, user.email));
+      const btnR = document.createElement('button');
+      btnR.className = 'btn-reject';
+      btnR.textContent = '拒绝';
+      btnR.addEventListener('click', () => rejectUser(user.id, user.email));
+      tdActions.appendChild(btnA);
+      tdActions.appendChild(btnR);
+    }
+
+    tr.append(tdEmail, tdRole, tdCreated, tdStatus, tdActions);
     tbody.appendChild(tr);
   });
 }

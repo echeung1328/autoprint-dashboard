@@ -1,5 +1,12 @@
 # AutoPrint RLS 安全自动检查
 # 每次 PR 提交时自动运行，确保不存在 RLS 无限递归和数据泄露漏洞
+#
+# 安全加固（2026-07-31 安全评估，详见 docs/security_audit_2026-07-31.md）：
+#   [SEC-13] 显式声明最小权限 permissions（默认可能是 write-all）
+#   [SEC-14] actions 升级到 v4 并固定 major 版本
+#   [SEC-15] 携带 SUPABASE_SERVICE_ROLE_KEY 的步骤仅在同仓库触发时运行，
+#            fork PR 不注入高权限密钥（本仓库是 PUBLIC 仓库）
+#   [SEC-16] 新增仓库明文密钥扫描 + 部署产物泄露自检
 
 name: RLS Security Check
 
@@ -9,45 +16,78 @@ on:
   push:
     branches: [ master, main ]
 
+# [SEC-13] 最小权限：本工作流只需要读代码
+permissions:
+  contents: read
+
 jobs:
   rls-validation:
     name: Validate RLS Policies
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
-      
-      - name: 设置 Node.js
-        uses: actions/setup-node@v3
+        uses: actions/checkout@v4
         with:
-          node-version: '18'
+          persist-credentials: false
 
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # [SEC-15] fork PR 拿不到 secrets，跳过以免误报失败；
+      # 同时避免把 service_role key 暴露给不可信来源的工作流上下文。
       - name: 运行 RLS 安全验证（零依赖）
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/validate-rls.js
-      
+
       - name: 检查 SQL 迁移文件
         run: |
           echo "检查 SQL 迁移文件中的 RLS 策略定义..."
-          # 查找所有 SQL 文件
-          find . -name "*.sql" -type f | while read sqlfile; do
+          find . -name "*.sql" -type f -not -path "./node_modules/*" | while read sqlfile; do
             echo "  检查: $sqlfile"
-            # 检查无限递归模式
             if grep -q "FROM public.profiles" "$sqlfile" && grep -q "USING.*profiles" "$sqlfile"; then
               echo "  ⚠️  警告: $sqlfile 可能包含 RLS 递归模式"
             fi
-            # 检查 public 角色策略
             if grep -q "TO public" "$sqlfile" || grep -q "TO anon" "$sqlfile"; then
               echo "  ⚠️  警告: $sqlfile 包含对 public/anon 的策略"
             fi
           done
-      
+
+      # [SEC-16] 明文密钥扫描：本仓库是 PUBLIC，任何 commit 都等于全网公开
+      - name: 扫描明文密钥
+        run: |
+          echo "扫描疑似明文凭证..."
+          PATTERN='(eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})|(re_[A-Za-z0-9]{20,})|(whsec_[A-Za-z0-9+/=]{20,})|(ghp_[A-Za-z0-9]{30,})|(sk-[A-Za-z0-9]{30,})'
+          HITS=$(grep -rInE "$PATTERN" . \
+            --exclude-dir=.git --exclude-dir=node_modules \
+            --exclude=SECRETS_LOCAL.md --exclude=rls-security-check.yml || true)
+          # index.html 里的 anon key 是设计上公开的（靠 RLS 保护），单独放行
+          HITS=$(echo "$HITS" | grep -v '^\./index\.html:' || true)
+          if [ -n "$HITS" ]; then
+            echo "$HITS" | sed -E 's/(:[0-9]+:).*/\1 [REDACTED — 命中疑似明文凭证]/'
+            echo "::error::检测到疑似明文凭证，禁止入库。请改用 Supabase Secrets / GitHub Secrets，并轮换已泄露的凭证。"
+            exit 1
+          fi
+          echo "✅ 未发现明文凭证"
+
+      # [SEC-16] 部署产物自检：确保发布目录是白名单，且不会把 .git / 文档 / 源数据发上线
+      - name: 校验发布目录白名单
+        run: |
+          echo "校验 netlify.toml 发布配置..."
+          if grep -qE '^\s*publish\s*=\s*"\."' netlify.toml; then
+            echo "::error::netlify.toml 的 publish 被改回 \".\"，会把整个仓库（含 .git/、docs/、源数据）发到公网。"
+            exit 1
+          fi
+          echo "✅ 发布目录不是仓库根"
+
       - name: 验证失败处理
         if: failure()
         run: |
-          echo "::error::RLS 安全验证失败或 CI 步骤出错，请查看上方日志定位。"
+          echo "::error::安全验证失败或 CI 步骤出错，请查看上方日志定位。"
           exit 1

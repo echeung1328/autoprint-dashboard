@@ -126,7 +126,9 @@ Deno.serve(async (req) => {
   try {
     checkEnv();
   } catch (e) {
-    return new Response('ENV ' + e.message, { status: 500 });
+    // [SEC-09] 不向外回显缺失的环境变量名，详细信息只进函数日志
+    console.log('ENV', e.message);
+    return new Response('CONFIG_ERROR', { status: 500 });
   }
 
   // extract params from query (GET) or form body (POST)
@@ -168,7 +170,10 @@ Deno.serve(async (req) => {
   try {
     row = await getRequestRow(q.id);
   } catch (e) {
-    return redirect(buildUiUrl(APPROVAL_UI_URL, { result: 'error', error: '读取审批请求失败: ' + String(e.message).slice(0, 200) }));
+    // [SEC-09] 审批确认页是外部站点，跳转 URL 会进 Referer / 网关日志，
+    // 因此只带通用提示，原始报错留在函数日志里。
+    console.log('load-request-fail', String(e.message).slice(0, 300));
+    return redirect(buildUiUrl(APPROVAL_UI_URL, { result: 'error', error: '读取审批请求失败，请联系管理员或按 SOP §7 手动处理。' }));
   }
   if (!row) {
     return redirect(buildUiUrl(APPROVAL_UI_URL, { result: 'error', error: '未找到对应的审批请求' }));
@@ -221,9 +226,11 @@ Deno.serve(async (req) => {
         await updateRequestRow(q.id, { error_msg: String(e.message).slice(0, 300) });
       } catch (_) { /* ignore */ }
       await sendResultEmail('批准执行失败', '审批请求 ' + q.id + ' 执行失败: ' + e.message + '\n数据仍在 staging(pending)，可走 SOP §7 手动处理。');
+      // [SEC-09] 详细报错走邮件 + 函数日志，不进外跳 URL
+      console.log('promote-fail', String(e.message).slice(0, 300));
       return redirect(buildUiUrl(APPROVAL_UI_URL, {
         result: 'error',
-        error: '转正执行出错: ' + String(e.message).slice(0, 200) + '。数据仍保留在 staging，可走 SOP §7 手动转正。'
+        error: '转正执行出错。数据仍保留在 staging，可走 SOP §7 手动转正（详情见告警邮件）。'
       }));
     }
   }
@@ -240,6 +247,7 @@ Deno.serve(async (req) => {
     await sendResultEmail('已拒绝', '审批请求 ' + q.id + ' 已拒绝，staging 行 ' + ids.join(',') + ' 标记为 rejected（保留审计）。');
     return redirect(buildUiUrl(APPROVAL_UI_URL, { result: 'rejected', detail: 'rejected ids=' + ids.join(',') }));
   } catch (e) {
-    return redirect(buildUiUrl(APPROVAL_UI_URL, { result: 'error', error: '拒绝操作出错: ' + String(e.message).slice(0, 200) }));
+    console.log('reject-fail', String(e.message).slice(0, 300));
+    return redirect(buildUiUrl(APPROVAL_UI_URL, { result: 'error', error: '拒绝操作出错，请联系管理员。' }));
   }
 });

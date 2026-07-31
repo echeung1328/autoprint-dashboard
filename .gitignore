@@ -22,6 +22,7 @@ Thumbs.db
 dist/
 build/
 out/
+public/
 
 # 环境变量
 .env

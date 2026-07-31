@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <!-- [SEC-12] 审批 HMAC token 在 URL 查询串里，必须禁止外发 Referer，
+       否则页面上任何外链/外部资源都会把 token 带给第三方。 -->
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <!-- [SEC-12] 本页无外部依赖，用 CSP 锁死，杜绝 token 被外带 -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action https://uvqjtvonxwsmhntnyest.supabase.co; base-uri 'none'; frame-ancestors 'none'">
   <title>AutoPrint 数据转正审批</title>
   <style>
     * { box-sizing: border-box; }
