@@ -163,6 +163,7 @@
 <div id="dashboardPage">
   <div class="header">
     <div>
+      <!-- 仅未登录态的兜底显示值；登录后由 loadHeaderVersion() 从 app_versions 读取最新版(当前 v1.3.0)动态覆盖。请勿在此硬编码版本号，发版时只需更新 app_versions 表即可 -->
       <h1>🖨️ AutoPrint 自动打印执行报告<span class="version-badge" id="headerVersion">v1.2.0</span></h1>
       <p id="reportPeriod">加载中...</p>
     </div>
