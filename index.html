@@ -192,6 +192,8 @@
       <option value="month">按月</option>
       <option value="year">按年</option>
     </select>
+    <label>站点视图：</label>
+    <select id="siteView" onchange="onSiteViewChange()"></select>
     <button class="btn-filter" onclick="applyFilter()">筛选</button>
     <button class="btn-reset" onclick="resetFilter()">重置</button>
     <button class="btn-export" onclick="exportCSV()" id="btnExport" style="display:none;">📥 导出 CSV</button>
@@ -298,11 +300,12 @@
         <th>角色</th>
         <th>注册时间</th>
         <th>状态</th>
+        <th>站点权限</th>
         <th>操作</th>
       </tr>
     </thead>
     <tbody id="userTableBody">
-      <tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>
+      <tr><td colspan="6" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>
     </tbody>
   </table>
 </div>
@@ -340,6 +343,8 @@ let currentUserData = null;
 let charts = {};
 let lastRecords = [];
 let currentGranularity = 'day';
+let mySiteScope = 'ALL';  // 当前用户站点权限 ALL/北京/上海（来自 profiles.site_scope）
+const SITE_ALL = '__all__'; // 站点视图「汇总」哨兵值，避免与真实站点名冲突
 
 // ===================== AUTH STATE =====================
 
@@ -381,8 +386,36 @@ async function checkApproval(user) {
     document.getElementById('btnManage').style.display = 'block';
     document.getElementById('btnAddVersion').style.display = 'inline-block';
   }
-  
+
+  // 读取站点权限（v2.0.0 多站点）：缺省按北京，与 RLS get_my_site_scope() 兜底一致
+  mySiteScope = currentUserData.site_scope || '北京';
+
   showDashboard(user);
+}
+
+// 按站点权限生成站点视图选项（D7）
+// 全局(ALL)：汇总(全部) + 北京 + 上海；单站点用户：仅其所属站点（无汇总、无他站）
+function buildSiteOptions() {
+  const sel = document.getElementById('siteView');
+  if (!sel) return;
+  let options;
+  if (mySiteScope === 'ALL') {
+    options = [
+      { value: SITE_ALL, label: '汇总(全部)' },
+      { value: '北京', label: '北京' },
+      { value: '上海', label: '上海' }
+    ];
+  } else {
+    options = [{ value: mySiteScope, label: mySiteScope }];
+  }
+  sel.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+}
+
+function onSiteViewChange() {
+  // 切换站点视图后按当前日期范围重新加载（loadData 内部读取 siteView）
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  loadData(startDate, endDate);
 }
 
 function showLogin() {
@@ -405,6 +438,7 @@ function showDashboard(user) {
   document.getElementById('dashboardPage').style.display = 'block';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('userEmail').textContent = user.email || '';
+  buildSiteOptions();
   loadHeaderVersion();
   loadData();
 }
@@ -525,6 +559,8 @@ function applyFilter() {
 function resetFilter() {
   document.getElementById('startDate').value = '';
   document.getElementById('endDate').value = '';
+  // 重置站点视图回有权第一项：全局默认「汇总」，单站点用户默认其站点
+  buildSiteOptions();
   loadData();
 }
 
@@ -545,9 +581,10 @@ function exportCSV() {
     return;
   }
 
-  const headers = ['执行时间', 'Title', '总数', '成功', '失败', '跳过', '耗时分钟'];
+  const headers = ['执行时间', '站点', 'Title', '总数', '成功', '失败', '跳过', '耗时分钟'];
   const rows = lastRecords.map(r => [
     r['执行时间'] || '',
+    r['site'] || '北京',
     '"' + (r['Title'] || '').replace(/"/g, '""') + '"',
     r['总数'] || 0,
     r['成功'] || 0,
@@ -789,6 +826,13 @@ async function loadData(startDate, endDate) {
   if (endDate) {
     query = query.lte('执行时间', endDate + 'T23:59:59');
   }
+
+  // 站点视图过滤：汇总不加 site 过滤（RLS 保证只返回有权行）；具体站点显式 eq（双保险 + KPI 口径清晰）
+  const siteViewEl = document.getElementById('siteView');
+  const siteView = siteViewEl ? siteViewEl.value : SITE_ALL;
+  if (siteView && siteView !== SITE_ALL) {
+    query = query.eq('site', siteView);
+  }
   
   const { data, error } = await query;
   
@@ -843,7 +887,7 @@ function groupByDate(records, granularity) {
     map[key].fail += r['失败'] || 0;
     map[key].skip += r['跳过'] || 0;
     if (r['耗时分钟'] != null) { map[key].durationSum += r['耗时分钟']; map[key].durationCount += 1; }
-    if (r['失败'] > 0) map[key].failures.push({ time: r['执行时间'], title: r['Title'] || '', total: r['总数'], fail: r['失败'] });
+    if (r['失败'] > 0) map[key].failures.push({ time: r['执行时间'], site: r['site'] || '北京', title: r['Title'] || '', total: r['总数'], fail: r['失败'] });
   });
   return map;
 }
@@ -1002,11 +1046,11 @@ function renderFailTable(grouped) {
     grouped[date].failures.forEach(f => {
       // [SEC-04] f.title 来自邮件入库链路（外部可影响），必须转义后再拼 HTML，
       // 否则构成存储型 XSS：恶意标题 -> 主表 -> 仪表盘执行任意脚本 -> 盗取已登录用户会话。
-      rows += `<tr><td>${escapeHtml(new Date(f.time).toLocaleString('zh-CN'))}</td><td>${escapeHtml(f.title)}</td><td>${escapeHtml(f.total)}</td><td><span class="badge-fail">${escapeHtml(f.fail)}</span></td><td>失败</td></tr>`;
+      rows += `<tr><td>${escapeHtml(new Date(f.time).toLocaleString('zh-CN'))}</td><td>${escapeHtml(f.site || '北京')}</td><td>${escapeHtml(f.title)}</td><td>${escapeHtml(f.total)}</td><td><span class="badge-fail">${escapeHtml(f.fail)}</span></td><td>失败</td></tr>`;
     });
   });
-  if (!rows) rows = '<tr><td colspan="5" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
-  document.getElementById('failTableContainer').innerHTML = `<table class="fail-table"><tr><th>执行时间</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>${rows}</table>`;
+  if (!rows) rows = '<tr><td colspan="6" style="text-align:center;color:#10b981;">暂无失败记录 ✅</td></tr>';
+  document.getElementById('failTableContainer').innerHTML = `<table class="fail-table"><tr><th>执行时间</th><th>站点</th><th>标题</th><th>总数</th><th>失败数</th><th>状态</th></tr>${rows}</table>`;
 }
 
 // ===================== YEARLY PEAKS =====================
@@ -1019,12 +1063,16 @@ async function loadYearlyPeaks() {
   // Set year label
   document.getElementById('peakYearLabel').textContent = now.getFullYear() + '年';
   
-  const { data, error } = await supabase
+  let peakQuery = supabase
     .from('ReportAutoPrint')
     .select('*')
     .gte('执行时间', yearStart)
-    .lte('执行时间', yearEnd)
-    .order('执行时间', { ascending: true });
+    .lte('执行时间', yearEnd);
+  // 年度高峰同样跟随当前站点视图口径
+  const peakSiteEl = document.getElementById('siteView');
+  const peakSite = peakSiteEl ? peakSiteEl.value : SITE_ALL;
+  if (peakSite && peakSite !== SITE_ALL) peakQuery = peakQuery.eq('site', peakSite);
+  const { data, error } = await peakQuery.order('执行时间', { ascending: true });
   
   if (error || !data || data.length === 0) {
     document.getElementById('peaksEmptyState').style.display = 'block';
@@ -1242,19 +1290,19 @@ function getTrendBadge(records, type) {
 
 async function loadUsers() {
   const tbody = document.getElementById('userTableBody');
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:#666;">加载中...</td></tr>';
   
   // Use RPC function (SECURITY DEFINER) to bypass RLS for admins
   const { data, error } = await supabase.rpc('get_all_profiles');
   
   if (error) {
     // [SEC-05] 错误对象内容不可信，转义后再渲染
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:40px; color:#ef4444;">加载失败：${escapeHtml(error.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:40px; color:#ef4444;">加载失败：${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   
   if (!data || !data.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:#666;">暂无用户</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:#666;">暂无用户</td></tr>';
     return;
   }
   
@@ -1282,6 +1330,26 @@ async function loadUsers() {
     badge.textContent = user.approved ? '已批准' : '待审批';
     tdStatus.appendChild(badge);
 
+    // 站点权限下拉（v2.0.0）：ALL(全局)/北京/上海。用 DOM API 避免属性注入，沿用 SEC-06 纪律
+    const tdSiteScope = document.createElement('td');
+    const selSite = document.createElement('select');
+    selSite.className = 'site-scope-select';
+    const scopeOptions = [
+      { value: 'ALL', label: '全局(ALL)' },
+      { value: '北京', label: '北京' },
+      { value: '上海', label: '上海' }
+    ];
+    const currentScope = user.site_scope || '北京';
+    scopeOptions.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (currentScope === opt.value) o.selected = true;
+      selSite.appendChild(o);
+    });
+    selSite.addEventListener('change', () => updateUserSiteScope(user.id, user.email || '', selSite.value));
+    tdSiteScope.appendChild(selSite);
+
     const tdActions = document.createElement('td');
     if (user.approved) {
       const ok = document.createElement('span');
@@ -1302,9 +1370,23 @@ async function loadUsers() {
       tdActions.appendChild(btnR);
     }
 
-    tr.append(tdEmail, tdRole, tdCreated, tdStatus, tdActions);
+    tr.append(tdEmail, tdRole, tdCreated, tdStatus, tdSiteScope, tdActions);
     tbody.appendChild(tr);
   });
+}
+
+// 管理员修改用户站点权限（v2.0.0）：走 SECURITY DEFINER RPC 绕过 RLS
+async function updateUserSiteScope(userId, email, scope) {
+  const { error } = await supabase.rpc('set_user_site_scope', {
+    target_user_id: userId,
+    target_scope: scope
+  });
+  if (error) {
+    showToast('站点权限修改失败：' + error.message, 'error');
+    loadUsers(); // 失败回滚 UI 到真实值
+  } else {
+    showToast('✅ 已设置 ' + email + ' 站点权限：' + scope + '（该用户重新登录后生效）', 'success');
+  }
 }
 
 async function approveUser(userId, email) {

@@ -17,7 +17,7 @@
 
 import * as XLSX from './xlsx.mjs';
 import { shouldSkipTitle } from './row_filter.mjs';
-import { parseBody } from './body_parser.mjs';
+import { parseBody, pickSite } from './body_parser.mjs';
 import { signToken } from './approval_token.mjs';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnyest.supabase.co';
@@ -179,6 +179,7 @@ async function sendApprovalEmail(inserted: any[]) {
     if (!ids.length) return;
     const summaryLines = inserted.map(
       (r) =>
+        '站点 ' + (r.site || '北京') + ' · ' +
         '业务日 ' + bjDay(r['执行时间']) + ' · ' + (r.Title || r['Title'] || '(无标题)') +
         ' · 总数 ' + (r['总数'] ?? '?') + ' 成功 ' + (r['成功'] ?? '?') +
         ' 跳过 ' + (r['跳过'] ?? '?') + ' 失败 ' + (r['失败'] ?? '?') +
@@ -213,13 +214,16 @@ async function sendApprovalEmail(inserted: any[]) {
       '<p style="color:#98a2b3;font-size:12px;">点击后会打开确认页，需再点一次按钮才会执行（防误触）。链接 72 小时后失效；过期或未处理可按 SOP §7 手动转正。</p>' +
       '</div>';
 
+    // site prefix in subject: single site -> its name; mixed -> '多站点'
+    const sites = Array.from(new Set(inserted.map((r) => r.site || '北京')));
+    const siteLabel = sites.length === 1 ? sites[0] : '多站点';
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: Deno.env.get('ALERT_EMAIL_FROM') || 'onboarding@resend.dev',
         to: [to],
-        subject: '[AutoPrint 待审批] ' + bjDay(inserted[0]['执行时间']) + ' 数据转正（' + ids.length + ' 条）',
+        subject: '[AutoPrint 待审批] ' + siteLabel + ' · ' + bjDay(inserted[0]['执行时间']) + ' 数据转正（' + ids.length + ' 条）',
         html
       })
     });
@@ -443,6 +447,7 @@ function cleanMatrix(matrix: string[][], from: string, filename: string, batchTa
     rec.Title = title;
     rec['执行时间'] = execTime;
     rec['完成时间'] = doneTime;
+    rec.site = pickSite(title); // issue #62: XLSX channel site from Title cell
     // 耗时分钟 preview (generated column in main table; here just for review)
     if (execTime && doneTime) {
       const d1 = new Date(execTime);
