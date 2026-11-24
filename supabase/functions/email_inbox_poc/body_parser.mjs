@@ -7,6 +7,8 @@
 //   L1. 执行时间/完成时间 are ALWAYS UTC+8 and NEVER carry a trailing 'Z'.
 //       Parsing always appends '+08:00'. NEVER add a "detect Z then branch" path.
 //   L2. Title is AI-generated and UNRELIABLE. Never derive time from it; store as-is.
+//       (issue #62: site IS derived from Title per explicit business rule — this is a
+//        categorical keyword match, NOT a time derivation. Title value is still stored as-is.)
 //   L3. The only trusted time source is the explicit 执行时间 key.
 //       Guard matched but 执行时间 unparseable -> { ok:false, guardMatched:true } (parse_error).
 //
@@ -15,6 +17,24 @@
 // falls back to the attachment path (signatures/forwards must not hijack).
 
 export const REQUIRED_KEYS = ['title', '执行时间', '总数', '成功', '跳过', '失败', '完成时间'];
+
+// ---- site detection (issue #62) ----
+// Business rule (user 2026-11-24): the SITE is carried in the Title line, e.g.
+//   "Title：上海 AutoPrint 2026-11-24 08:00:00" -> 上海
+//   "Title：北京 AutoPrint 2026-11-24 09:30:00" -> 北京
+// Decision: 任意位置含即算; 同时出现取先出现的; 都不含 -> 默认北京.
+// L2 note: this derives a categorical SITE only — time is NEVER derived from Title.
+export const SITE_SH_KEYWORD = '上海';
+export const SITE_DEFAULT = '北京';
+export function pickSite(title) {
+  const s = String(title == null ? '' : title);
+  const iSh = s.indexOf(SITE_SH_KEYWORD);
+  const iBj = s.indexOf(SITE_DEFAULT); // '北京' is also the main-site keyword
+  if (iSh < 0 && iBj < 0) return SITE_DEFAULT;
+  if (iSh < 0) return SITE_DEFAULT; // 北京 only
+  if (iBj < 0) return SITE_SH_KEYWORD; // 上海 only
+  return iSh < iBj ? SITE_SH_KEYWORD : SITE_DEFAULT; // both -> first occurrence wins
+}
 
 // ---- timestamp parsing: same semantics as index.ts parseTs (always +08:00) ----
 function pad(n) {
@@ -112,6 +132,7 @@ export function parseBody(text, opts) {
     ModifiedBy: creator || from,
     source_email: from,
     source_filename: '(email_body)', // channel marker (design doc §5.4)
+    site: pickSite(kv['title']), // issue #62: site from Title keyword
     batch_tag: batchTag,
     status: 'pending'
   };

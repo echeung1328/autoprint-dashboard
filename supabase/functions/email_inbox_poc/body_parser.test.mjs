@@ -1,6 +1,6 @@
 // body_parser.test.mjs — regression tests for the email BODY channel parser (issue #34).
 // Run with: node body_parser.test.mjs
-import { parseBody, parseTsBody, extractKeyValues } from './body_parser.mjs';
+import { parseBody, parseTsBody, extractKeyValues, pickSite } from './body_parser.mjs';
 
 const SAMPLE = `创建人：张怀忠(Zhang Huaizhong 昆仑联通)
 邮箱：zhang.hz@comlan.com
@@ -47,8 +47,33 @@ function check(cond, desc, extra) {
   check(rec.标签 === 'SRC=BODY;SP_REC=139', 'D3: 标签 = SRC=BODY;SP_REC=139', rec.标签);
   check(rec.CreatedBy === '张怀忠(Zhang Huaizhong 昆仑联通)', 'D2: CreatedBy = body 创建人', rec.CreatedBy);
   check(rec.source_filename === '(email_body)', 'channel marker (email_body)', rec.source_filename);
+  check(rec.site === '北京', 'issue #62: Title without site keyword -> default 北京', rec.site);
   check(rec.status === 'pending', 'status pending');
 }
+
+// ---- 1b. issue #62: site detection from Title ----
+{
+  const sh = SAMPLE.replace('Title：AutoPrint-2026-07-29 09:30', 'Title：上海 AutoPrint 2026-11-24 08:00:00');
+  const r = parseBody(sh, { from: 'a@b.c' });
+  check(r.ok && r.record.site === '上海', 'site: Title leading 上海 -> 上海', r.record && r.record.site);
+}
+{
+  const bj = SAMPLE.replace('Title：AutoPrint-2026-07-29 09:30', 'Title：北京 AutoPrint 2026-11-24 09:30:00');
+  const r = parseBody(bj, { from: 'a@b.c' });
+  check(r.ok && r.record.site === '北京', 'site: Title leading 北京 -> 北京', r.record && r.record.site);
+}
+{
+  const mid = SAMPLE.replace('Title：AutoPrint-2026-07-29 09:30', 'Title：AutoPrint 上海分公司 2026-11-24');
+  const r = parseBody(mid, { from: 'a@b.c' });
+  check(r.ok && r.record.site === '上海', 'site: 上海 anywhere in Title -> 上海', r.record && r.record.site);
+}
+// pickSite pure-function edge cases
+check(pickSite(null) === '北京' && pickSite('') === '北京', 'pickSite: null/empty -> 北京');
+check(
+  pickSite('北京 AutoPrint 上海分支') === '北京' && pickSite('上海 AutoPrint 北京分支') === '上海',
+  'pickSite: both keywords -> first occurrence wins'
+);
+check(pickSite('每日报销单据打印') === '北京', 'pickSite: no keyword -> 北京 default');
 
 // ---- 2. L2: random AI-generated Titles never block parsing ----
 {
