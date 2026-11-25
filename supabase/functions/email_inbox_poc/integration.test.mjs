@@ -61,12 +61,22 @@ const calls = [];
 const emails = []; // resend payloads
 let idSeq = 100;
 let uuidSeq = 0;
+let currentMode = 'manual'; // v2.1.0: configurable for scenario tests
 globalThis.fetch = async (url, opts = {}) => {
   calls.push({ url: String(url), method: opts.method || 'GET' });
   const u = String(url);
   if (u.startsWith('https://api.resend.com/')) {
     emails.push(JSON.parse(opts.body));
     return new Response('{}', { status: 200 });
+  }
+  // v2.1.0: approval-mode config read (GET, service_role)
+  if (u.includes('/rest/v1/rpc/get_approval_mode')) {
+    return new Response(JSON.stringify(currentMode), { status: 200 });
+  }
+  // v2.1.0: promote_staging_ids RPC (auto mode)
+  if (u.includes('/rest/v1/rpc/promote_staging_ids')) {
+    store._promoteCalls = (store._promoteCalls || 0) + 1;
+    return new Response(JSON.stringify({ promoted: 1, inserted: 1, updated: 0, superseded: 0 }), { status: 200 });
   }
   if (u.includes('/rest/v1/ReportAutoPrint?select=id')) {
     return new Response(JSON.stringify([]), { status: 200 }); // no existing main-table row
@@ -234,6 +244,33 @@ Title：AutoPrint-2026-07-29 09:30
   const html = '<div>' + BODY_OK.split('\n').map((l) => '<p>' + l + '</p>').join('') + '</div>';
   const r = await post({ from: 'zhang.hz@comlan.com', subject: '通知', html, attachments: [] });
   check(r.text.startsWith('ok-staged-body-1'), 'G: html body stripped and parsed', r);
+}
+
+// ---- Scenario H (v2.1.0): auto mode + valid data => auto-promote, no approval email ----
+{
+  reset();
+  currentMode = 'auto';
+  const r = await post({ from: 'zhang.hz@comlan.com', subject: 'ReportAutoPrint 新增记录通知', body: BODY_OK, attachments: [] });
+  check(r.text.startsWith('ok-staged-body-1'), 'H: auto mode ingestion still ok', r);
+  check(store._promoteCalls === 1, 'H: promote_staging_ids RPC called', store._promoteCalls);
+  const reqRows = (store.promote_approval_request || []).filter((x) => x.status === 'auto_approved');
+  check(reqRows.length === 1, 'H: auto_approved audit trail written', reqRows);
+  const approvalEmails = emails.filter((e) => (e.subject || '').includes('待审批'));
+  check(approvalEmails.length === 0, 'H: no manual approval email in auto mode', approvalEmails.length);
+  currentMode = 'manual';
+}
+
+// ---- Scenario I (v2.1.0): auto mode + invalid data (numeric mismatch) => blocked ----
+{
+  reset();
+  currentMode = 'auto';
+  const BAD = BODY_OK.replace('总数：6', '总数：99');
+  const r = await post({ from: 'zhang.hz@comlan.com', subject: 'ReportAutoPrint 新增记录通知', body: BAD, attachments: [] });
+  check(r.text.startsWith('ok-staged-body-1'), 'I: invalid data still staged (ingestion not blocked)', r);
+  check(!store._promoteCalls, 'I: promote NOT called when validation fails', store._promoteCalls);
+  const subjects = emails.map((e) => e.subject || '');
+  check(subjects.some((s) => s.includes('自动审批阻断')), 'I: block alert raised', subjects);
+  currentMode = 'manual';
 }
 
 if (failed > 0) {

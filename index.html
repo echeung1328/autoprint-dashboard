@@ -122,6 +122,26 @@
   .btn-reject:hover { background: #dc2626; }
   .btn-back { padding: 8px 16px; background: white; color: #002FA7; border: 1px solid #002FA7; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
   .btn-back:hover { background: #f0f4ff; }
+  /* Approval Settings Page (v2.1.0 #65) */
+  #approvalSettingsPage { display: none; padding: 32px; }
+  .settings-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 28px 32px; margin-bottom: 24px; max-width: 900px; }
+  .settings-card h3 { color: #002FA7; margin: 0 0 6px; font-size: 18px; }
+  .settings-card .hint { color: #64748b; font-size: 13px; margin: 0 0 20px; line-height: 1.6; }
+  .mode-switch { display: flex; gap: 12px; margin: 16px 0; }
+  .mode-btn { flex: 1; max-width: 200px; padding: 16px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; cursor: pointer; text-align: center; transition: all .2s; }
+  .mode-btn:hover { border-color: #00C3FF; }
+  .mode-btn .mt { font-size: 15px; font-weight: 600; color: #334155; }
+  .mode-btn .md { font-size: 12px; color: #64748b; margin-top: 6px; }
+  .mode-btn.active { border-color: #002FA7; background: #f0f4ff; }
+  .mode-btn.active .mt { color: #002FA7; }
+  .mode-btn.active[data-mode="auto"] { border-color: #10b981; background: #f0fdf4; }
+  .mode-btn.active[data-mode="auto"] .mt { color: #059669; }
+  .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .log-table th, .log-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+  .log-table th { background: #f8fafc; color: #475569; font-weight: 600; }
+  .mode-pill { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .mode-manual { background: #eff6ff; color: #002FA7; }
+  .mode-auto { background: #d1fae5; color: #059669; }
   .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
   .status-pending { background: #eff6ff; color: #002FA7; }
   .status-approved { background: #d1fae5; color: #059669; }
@@ -174,6 +194,7 @@
     </div>
     <div class="header-right">
       <button class="btn-manage" id="btnManage" style="display:none;" onclick="showUserManage()">👥 用户管理</button>
+      <button class="btn-manage" id="btnApprovalSettings" style="display:none;" onclick="showApprovalSettings()">⚙️ 审批设置</button>
       <span class="user-email" id="userEmail"></span>
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
@@ -310,6 +331,37 @@
   </table>
 </div>
 
+<!-- Approval Settings Page (v2.1.0 #65, admin only) -->
+<div id="approvalSettingsPage">
+  <button class="btn-back" onclick="backToDashboard()">← 返回仪表盘</button>
+  <h2 style="margin-bottom: 20px; color: #002FA7;">⚙️ 审批模式设置</h2>
+
+  <div class="settings-card">
+    <h3>当前模式：<span id="currentModeLabel" class="mode-pill mode-manual">人工审批</span></h3>
+    <p class="hint">人工审批（manual）：每批数据入库后发送审批邮件，需管理员点击确认才写入主表。<br>
+      自动审批（auto）：数据入库后自动校验并转正，免人工点击；异常数据将阻断并告警，保留在 staging 待人工处理。</p>
+    <div class="mode-switch">
+      <button class="mode-btn active" id="modeBtnManual" data-mode="manual" onclick="setApprovalMode('manual')">
+        <div class="mt">🔒 人工审批</div>
+        <div class="md">稳妥 · 每批需确认<br>新功能上线推荐</div>
+      </button>
+      <button class="mode-btn" id="modeBtnAuto" data-mode="auto" onclick="setApprovalMode('auto')">
+        <div class="mt">⚡ 自动审批</div>
+        <div class="md">高效 · 校验后自动转正<br>稳定运行后启用</div>
+      </button>
+    </div>
+    <p class="hint" style="margin-top:14px; color:#94a3b8; font-size:12px;">切换仅管理员可用，每次切换都会记录审计日志。建议新功能上线期间保持人工审批，验证稳定 1-2 天后再切自动。</p>
+  </div>
+
+  <div class="settings-card">
+    <h3>切换历史</h3>
+    <table class="log-table">
+      <thead><tr><th>时间</th><th>从</th><th>到</th><th>操作人</th><th>备注</th></tr></thead>
+      <tbody id="modeLogBody"><tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
 
@@ -384,6 +436,7 @@ async function checkApproval(user) {
   // Check if admin
   if (currentUserData.role === 'admin') {
     document.getElementById('btnManage').style.display = 'block';
+    document.getElementById('btnApprovalSettings').style.display = 'block';
     document.getElementById('btnAddVersion').style.display = 'inline-block';
   }
 
@@ -423,6 +476,7 @@ function showLogin() {
   document.getElementById('pendingPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
 }
 
 function showPending(email) {
@@ -430,6 +484,7 @@ function showPending(email) {
   document.getElementById('pendingPage').style.display = 'flex';
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
 }
 
 function showDashboard(user) {
@@ -437,6 +492,7 @@ function showDashboard(user) {
   document.getElementById('pendingPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'block';
   document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
   document.getElementById('userEmail').textContent = user.email || '';
   buildSiteOptions();
   loadHeaderVersion();
@@ -461,6 +517,7 @@ function showUserManage() {
   document.getElementById('pendingPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'block';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
   loadUsers();
 }
 
@@ -469,6 +526,99 @@ function backToDashboard() {
   document.getElementById('pendingPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'block';
   document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
+}
+
+// ===================== APPROVAL MODE SETTINGS (v2.1.0 #65, admin only) =====================
+function showApprovalSettings() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'none';
+  document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'block';
+  loadApprovalMode();
+  loadModeLog();
+}
+
+// 读取当前审批模式并更新按钮高亮
+async function loadApprovalMode() {
+  try {
+    const { data, error } = await supabase.rpc('get_approval_mode');
+    if (error) throw error;
+    const mode = (data === 'auto') ? 'auto' : 'manual';
+    renderModeState(mode);
+  } catch (e) {
+    // fail-safe 显示为 manual，不擅自切换
+    renderModeState('manual');
+    showToast('读取审批模式失败：' + (e.message || e), 'error');
+  }
+}
+
+function renderModeState(mode) {
+  const isAuto = mode === 'auto';
+  const label = document.getElementById('currentModeLabel');
+  label.textContent = isAuto ? '自动审批' : '人工审批';
+  label.className = 'mode-pill ' + (isAuto ? 'mode-auto' : 'mode-manual');
+  document.getElementById('modeBtnManual').classList.toggle('active', !isAuto);
+  document.getElementById('modeBtnAuto').classList.toggle('active', isAuto);
+}
+
+// 切换审批模式（RPC 内部校验 admin）
+async function setApprovalMode(mode) {
+  const cur = document.getElementById('currentModeLabel').textContent;
+  const target = mode === 'auto' ? '自动审批' : '人工审批';
+  if (cur === target) return;
+  const warn = mode === 'auto'
+    ? '确认切换到【自动审批】？\n数据入库后会自动校验并转正，不再需要人工点击。\n建议仅在功能稳定运行后启用。'
+    : '确认切换回【人工审批】？\n之后每批数据需管理员点邮件确认才写入主表。';
+  if (!confirm(warn)) return;
+  const note = '看板切换 from ' + cur + ' to ' + target;
+  const { error } = await supabase.rpc('set_approval_mode', { p_mode: mode, p_note: note });
+  if (error) {
+    showToast('切换失败：' + error.message, 'error');
+    return;
+  }
+  renderModeState(mode);
+  showToast('已切换到【' + target + '】', 'success');
+  loadModeLog();
+}
+
+// 加载切换审计日志（DOM API 构建，遵循 SEC-04 转义纪律）
+async function loadModeLog() {
+  const tbody = document.getElementById('modeLogBody');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:24px;">加载中...</td></tr>';
+  try {
+    const { data, error } = await supabase.rpc('get_approval_mode_log', { p_limit: 20 });
+    if (error) throw error;
+    if (!data || !data.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#10b981;padding:24px;">暂无切换记录（当前为初始人工审批模式）</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    data.forEach((row) => {
+      const tr = document.createElement('tr');
+      const at = document.createElement('td');
+      at.textContent = row.changed_at ? new Date(row.changed_at).toLocaleString('zh-CN') : '-';
+      const from = document.createElement('td');
+      const fromPill = document.createElement('span');
+      fromPill.className = 'mode-pill ' + (row.from_mode === 'auto' ? 'mode-auto' : 'mode-manual');
+      fromPill.textContent = row.from_mode === 'auto' ? '自动' : '人工';
+      from.appendChild(fromPill);
+      const to = document.createElement('td');
+      const toPill = document.createElement('span');
+      toPill.className = 'mode-pill ' + (row.to_mode === 'auto' ? 'mode-auto' : 'mode-manual');
+      toPill.textContent = row.to_mode === 'auto' ? '自动' : '人工';
+      to.appendChild(toPill);
+      const who = document.createElement('td');
+      who.textContent = row.changed_email || '-';
+      const note = document.createElement('td');
+      note.textContent = row.note || '-';
+      tr.append(at, from, to, who, note);
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:24px;">加载失败：' + (e.message || e) + '</td></tr>';
+  }
 }
 
 async function logout() {
