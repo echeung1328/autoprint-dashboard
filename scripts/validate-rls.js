@@ -14,6 +14,9 @@
  * 用法：node scripts/validate-rls.js
  * 环境变量（均有内置默认值，可被仓库 Secrets 覆盖）：
  *   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+ *
+ * 说明：下方 anon key 与 index.html 中的是同一个公开值（仅 anon 读权限，靠 RLS 保护数据），
+ * 不属于泄露凭证；CI 明文扫描已按「SUPABASE_ANON_KEY 所在行」精准放行，其余凭证仍严格拦截。
  */
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://uvqjtvonxwsmhntnyest.supabase.co').replace(/\/$/, '');
