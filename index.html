@@ -148,6 +148,59 @@
   .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; z-index: 1000; display: none; }
   .toast-success { background: #d1fae5; color: #059669; border: 1px solid #10b981; }
   .toast-error { background: #fee2e2; color: #dc2626; border: 1px solid #ef4444; }
+
+  /* ===== Access Links: 对外分享页 (v2.2.0 #49) ===== */
+  #sharePage { display: none; min-height: 100vh; background: #f0f4f8; }
+  .share-header { background: linear-gradient(135deg, #001D70, #002FA7); color: #fff; padding: 28px 32px; }
+  .share-header h1 { font-size: 22px; font-weight: 600; }
+  .share-header .share-meta { font-size: 13px; opacity: .85; margin-top: 10px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .share-body { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+  .share-state { text-align: center; padding: 100px 20px; color: #64748b; }
+  .share-state .state-icon { font-size: 56px; margin-bottom: 16px; }
+  .share-state h2 { color: #002FA7; font-size: 22px; margin-bottom: 10px; }
+  .share-state p { font-size: 14px; line-height: 1.7; }
+  .share-kpi-row { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 24px; }
+  .share-kpi { flex: 1; min-width: 190px; background: #fff; border-radius: 12px; padding: 22px; position: relative; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.06); }
+  .share-kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; }
+  .share-kpi.k-total::before { background: linear-gradient(90deg, #002FA7, #00C3FF); }
+  .share-kpi.k-success::before { background: linear-gradient(90deg, #10b981, #34d399); }
+  .share-kpi.k-fail::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+  .share-kpi.k-duration::before { background: linear-gradient(90deg, #00C3FF, #66D9FF); }
+  .share-kpi .k-label { font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 500; }
+  .share-kpi .k-value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .share-kpi.k-total .k-value { color: #002FA7; }
+  .share-kpi.k-success .k-value { color: #10b981; }
+  .share-kpi.k-fail .k-value { color: #ef4444; }
+  .share-kpi.k-duration .k-value { color: #00C3FF; }
+  .share-table-box { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .share-table-box h3 { font-size: 15px; color: #1e293b; margin-bottom: 16px; }
+  .share-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .share-table th, .share-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+  .share-table th { background: #f8fafc; color: #475569; font-weight: 600; }
+  .share-footer { text-align: center; color: #94a3b8; font-size: 12px; padding: 24px; }
+
+  /* ===== Access Links: 管理页 (v2.2.0 #50) ===== */
+  #accessLinksPage { display: none; padding: 32px; }
+  .al-toolbar { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 2px 8px rgba(0,0,0,.08); margin-bottom: 24px; }
+  .al-field { display: flex; flex-direction: column; gap: 6px; }
+  .al-field label { font-size: 12px; font-weight: 600; color: #475569; }
+  .al-field input { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; }
+  .al-field input:focus { border-color: #002FA7; box-shadow: 0 0 0 3px rgba(0,47,167,.1); }
+  .al-btn { padding: 9px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .al-btn-primary { background: #002FA7; color: #fff; }
+  .al-btn-primary:hover { background: #001f8a; }
+  .al-btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+  .al-btn-stop { background: #f59e0b; color: #fff; }
+  .al-btn-del { background: #ef4444; color: #fff; margin-left: 6px; }
+  .al-btn-copy { background: #00C3FF; color: #fff; margin-left: 6px; }
+  .al-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); overflow: hidden; }
+  .al-table th, .al-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+  .al-table th { background: #f8fafc; color: #475569; font-weight: 600; }
+  .al-status { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .al-status-active { background: #d1fae5; color: #059669; }
+  .al-status-stopped { background: #fee2e2; color: #dc2626; }
+  .al-status-expired { background: #fef3c7; color: #b45309; }
+  .al-url { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; font-family: Consolas, monospace; font-size: 12px; color: #64748b; }
 </style>
 </head>
 <body>
@@ -195,6 +248,7 @@
     <div class="header-right">
       <button class="btn-manage" id="btnManage" style="display:none;" onclick="showUserManage()">👥 用户管理</button>
       <button class="btn-manage" id="btnApprovalSettings" style="display:none;" onclick="showApprovalSettings()">⚙️ 审批设置</button>
+      <button class="btn-manage" id="btnAccessLinks" style="display:none;" onclick="showAccessLinks()">🔗 访问链接</button>
       <span class="user-email" id="userEmail"></span>
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
@@ -362,6 +416,56 @@
   </div>
 </div>
 
+<!-- Access Links Admin Page (v2.2.0 #50, admin only) -->
+<div id="accessLinksPage">
+  <button class="btn-back" onclick="backToDashboard()">← 返回仪表盘</button>
+  <h2 style="margin-bottom: 8px; color: #002FA7;">🔗 对外访问链接管理</h2>
+  <p style="font-size:13px; color:#64748b; margin-bottom:24px; line-height:1.6;">
+    生成免登录的只读分享链接（有效期最长 365 天）。访客打开即可查看报表快照，可随时停止或删除。
+  </p>
+
+  <div class="al-toolbar">
+    <div class="al-field">
+      <label for="alTitle">链接标题</label>
+      <input id="alTitle" type="text" placeholder="如：11月打印执行报告" style="min-width:240px;">
+    </div>
+    <div class="al-field">
+      <label for="alDays">有效期（天，1-365）</label>
+      <input id="alDays" type="number" value="30" min="1" max="365" style="width:120px;">
+    </div>
+    <button class="al-btn al-btn-primary" onclick="createAccessLink()">➕ 创建链接</button>
+  </div>
+
+  <div id="alListBox">
+    <table class="al-table">
+      <thead>
+        <tr>
+          <th>标题</th><th>状态</th><th>有效期至</th><th>创建者</th><th>分享 URL</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="alTableBody">
+        <tr><td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Share Page (v2.2.0 #49, public /share/[token], no login) -->
+<div id="sharePage">
+  <div class="share-header">
+    <h1>🖨️ AutoPrint 执行报告<span style="font-size:13px; opacity:.8; font-weight:400; margin-left:12px;">对外只读视图</span></h1>
+    <div class="share-meta">
+      <span>📄 <span id="shareTitle">--</span></span>
+      <span>⏳ 有效期至 <span id="shareExpiry">--</span></span>
+      <span>🕐 生成于 <span id="shareGenerated">--</span></span>
+    </div>
+  </div>
+  <div class="share-body" id="shareBody">
+    <div class="loading">正在加载报表数据...</div>
+  </div>
+  <div class="share-footer">AutoPrint 自动打印执行报告系统 · 数据仅供对外展示</div>
+</div>
+
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
 
@@ -398,17 +502,107 @@ let currentGranularity = 'day';
 let mySiteScope = 'ALL';  // 当前用户站点权限 ALL/北京/上海（来自 profiles.site_scope）
 const SITE_ALL = '__all__'; // 站点视图「汇总」哨兵值，避免与真实站点名冲突
 
+// Edge Function 基址（access_links，issue #45/#49/#50）
+const AL_FN_BASE = SUPABASE_URL + '/functions/v1/access_links';
+
+// === AL_UI_PURE_START (issue #49/#50; 供 ui_logic.test.mjs 提取断言，勿删标记) ===
+// 以下函数无 DOM / supabase 依赖，测试脚本按标记提取后直接求值。
+
+// 从 pathname 解析分享 token；非分享路径返回 null。兼容尾斜杠与 index.html 后缀。
+function alParseShareToken(pathname) {
+  if (typeof pathname !== 'string') return null;
+  var m = pathname.match(/^\/share\/([A-Za-z0-9_-]{10,})\/?(?:index\.html)?$/);
+  return m ? m[1] : null;
+}
+
+// 是否管理页路由
+function alIsAdminLinksPath(pathname) {
+  return typeof pathname === 'string' && /^\/admin\/access-links\/?(?:index\.html)?$/.test(pathname);
+}
+
+// 有效期天数钳制：非法→30；<1→1；>365→365（与后端 clampLifetimeDays 对齐）
+function alClampDays(days) {
+  var n = Number(days);
+  if (!Number.isFinite(n)) return 30;
+  n = Math.floor(n);
+  if (n < 1) return 1;
+  if (n > 365) return 365;
+  return n;
+}
+
+// 管理页状态判定：stopped 优先于 expired，与后端 validateLink 一致
+function alLinkStatus(link, nowMs) {
+  if (!link) return 'unknown';
+  if (link.status === 'stopped') return 'stopped';
+  var t = Date.parse(link.expires_at);
+  if (Number.isFinite(t) && t < nowMs) return 'expired';
+  if (link.status === 'active') return 'active';
+  return 'unknown';
+}
+
+var AL_STATUS_META = {
+  active:  { label: '生效中', cls: 'al-status-active' },
+  stopped: { label: '已停止', cls: 'al-status-stopped' },
+  expired: { label: '已过期', cls: 'al-status-expired' },
+  unknown: { label: '未知',   cls: 'al-status-active' }
+};
+
+// 分享失败视图：HTTP 状态 + 后端 error 文案 → 友好展示
+function alShareErrorView(status, errorMsg) {
+  var msg = String(errorMsg || '');
+  if (status === 403) {
+    if (msg.indexOf('停止') >= 0) return { icon: '⛔', title: '链接已停止访问', detail: '该分享链接已被管理员停止，请联系分享方获取新链接。' };
+    if (msg.indexOf('过期') >= 0) return { icon: '⌛', title: '链接已过期', detail: '该分享链接已超过有效期，请联系分享方获取新链接。' };
+    return { icon: '🔒', title: '链接不可用', detail: '链接不存在或已删除，请核对后重试。' };
+  }
+  if (status === 0 || status >= 500) return { icon: '⚠️', title: '暂时无法加载', detail: '服务暂时不可用，请稍后重试。' };
+  return { icon: '🔒', title: '无法访问', detail: msg || '链接不可用。' };
+}
+
+// 从对外数据行（7 字段白名单）计算 KPI 汇总
+function alShareKpis(rows) {
+  var arr = Array.isArray(rows) ? rows : [];
+  var total = 0, success = 0, skipped = 0, fail = 0, durSum = 0, durN = 0;
+  arr.forEach(function (r) {
+    total   += Number(r['总数']) || 0;
+    success += Number(r['成功']) || 0;
+    skipped += Number(r['跳过']) || 0;
+    fail    += Number(r['失败']) || 0;
+    var d = Number(r['耗时分钟']);
+    if (Number.isFinite(d)) { durSum += d; durN++; }
+  });
+  var avgDur = durN ? Math.round((durSum / durN) * 10) / 10 : 0;
+  return { total: total, success: success, skipped: skipped, fail: fail, avgDuration: avgDur, count: arr.length };
+}
+
+// 自带 HTML 转义（不依赖页面 escapeHtml，便于独立测试）
+function alEscape(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+// === AL_UI_PURE_END ===
+
 // ===================== AUTH STATE =====================
 
-supabase.auth.getSession().then(({ data: { session } }) => {
-  if (session) checkApproval(session.user);
-  else showLogin();
-});
+// 启动路由分发：/share/<token> 免登录直接渲染；其余走正常鉴权流程
+function bootstrap() {
+  const shareToken = alParseShareToken(window.location.pathname);
+  if (shareToken) { loadSharePage(shareToken); return; }
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session) checkApproval(session.user);
+    else showLogin();
+  });
+}
 
 supabase.auth.onAuthStateChange((event, session) => {
+  // 分享页是独立免登录视图，不受登录态变化影响
+  if (alParseShareToken(window.location.pathname)) return;
   if (event === 'SIGNED_IN' && session) checkApproval(session.user);
   if (event === 'SIGNED_OUT') showLogin();
 });
+
+bootstrap();
 
 async function checkApproval(user) {
   currentUser = user;
@@ -437,11 +631,18 @@ async function checkApproval(user) {
   if (currentUserData.role === 'admin') {
     document.getElementById('btnManage').style.display = 'block';
     document.getElementById('btnApprovalSettings').style.display = 'block';
+    document.getElementById('btnAccessLinks').style.display = 'block';
     document.getElementById('btnAddVersion').style.display = 'inline-block';
   }
 
   // 读取站点权限（v2.0.0 多站点）：缺省按北京，与 RLS get_my_site_scope() 兜底一致
   mySiteScope = currentUserData.site_scope || '北京';
+
+  // 直达管理页路由 /admin/access-links（仅 admin；非 admin 回落仪表盘）
+  if (alIsAdminLinksPath(window.location.pathname) && currentUserData.role === 'admin') {
+    showAccessLinks();
+    return;
+  }
 
   showDashboard(user);
 }
@@ -477,6 +678,7 @@ function showLogin() {
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('approvalSettingsPage').style.display = 'none';
+  const alPg = document.getElementById('accessLinksPage'); if (alPg) alPg.style.display = 'none';
 }
 
 function showPending(email) {
@@ -485,6 +687,7 @@ function showPending(email) {
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('approvalSettingsPage').style.display = 'none';
+  const alPg = document.getElementById('accessLinksPage'); if (alPg) alPg.style.display = 'none';
 }
 
 function showDashboard(user) {
@@ -493,6 +696,7 @@ function showDashboard(user) {
   document.getElementById('dashboardPage').style.display = 'block';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('approvalSettingsPage').style.display = 'none';
+  const alPg = document.getElementById('accessLinksPage'); if (alPg) alPg.style.display = 'none';
   document.getElementById('userEmail').textContent = user.email || '';
   buildSiteOptions();
   loadHeaderVersion();
@@ -518,6 +722,7 @@ function showUserManage() {
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'block';
   document.getElementById('approvalSettingsPage').style.display = 'none';
+  const alPg = document.getElementById('accessLinksPage'); if (alPg) alPg.style.display = 'none';
   loadUsers();
 }
 
@@ -527,6 +732,7 @@ function backToDashboard() {
   document.getElementById('dashboardPage').style.display = 'block';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('approvalSettingsPage').style.display = 'none';
+  const alPg = document.getElementById('accessLinksPage'); if (alPg) alPg.style.display = 'none';
 }
 
 // ===================== APPROVAL MODE SETTINGS (v2.1.0 #65, admin only) =====================
@@ -536,9 +742,206 @@ function showApprovalSettings() {
   document.getElementById('dashboardPage').style.display = 'none';
   document.getElementById('userManagePage').style.display = 'none';
   document.getElementById('approvalSettingsPage').style.display = 'block';
+  const alPg = document.getElementById('accessLinksPage'); if (alPg) alPg.style.display = 'none';
   loadApprovalMode();
   loadModeLog();
 }
+
+// ===================== ACCESS LINKS ADMIN PAGE (v2.2.0 #50) =====================
+// 调用 Edge Function /admin/* 均需 admin JWT：attachAdminAuth() 返回带 Authorization 的 headers
+async function alAdminFetch(path, options) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) { showToast('登录态已失效，请重新登录', 'error'); return null; }
+  const opts = Object.assign({}, options || {});
+  opts.headers = Object.assign({}, opts.headers || {}, { 'Authorization': 'Bearer ' + session.access_token });
+  const resp = await fetch(AL_FN_BASE + path, opts);
+  let body = {};
+  try { body = await resp.json(); } catch (_) {}
+  if (!resp.ok) {
+    showToast('操作失败：' + (body.error || ('HTTP ' + resp.status)), 'error');
+    return null;
+  }
+  return body;
+}
+
+function showAccessLinks() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'none';
+  document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
+  const sharePg = document.getElementById('sharePage'); if (sharePg) sharePg.style.display = 'none';
+  document.getElementById('accessLinksPage').style.display = 'block';
+  loadAccessLinks();
+}
+
+async function loadAccessLinks() {
+  const tbody = document.getElementById('alTableBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">加载中...</td></tr>';
+  const body = await alAdminFetch('/admin/list', { method: 'GET' });
+  if (!body) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#ef4444;">加载失败</td></tr>'; return; }
+  const links = Array.isArray(body.links) ? body.links : [];
+  if (!links.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">暂无访问链接，请在上方创建</td></tr>';
+    return;
+  }
+  const now = Date.now();
+  const base = window.location.origin + '/share/';
+  tbody.innerHTML = links.map(function (l) {
+    const st = alLinkStatus(l, now);
+    const meta = AL_STATUS_META[st] || AL_STATUS_META.unknown;
+    const fullUrl = base + alEscape(l.token);
+    const creator = l.created_by_email || (l.created_by ? String(l.created_by).slice(0, 8) : '-');
+    const canStop = l.status === 'active';
+    return '<tr>' +
+      '<td>' + alEscape(l.title) + '</td>' +
+      '<td><span class="al-status ' + meta.cls + '">' + meta.label + '</span></td>' +
+      '<td>' + alEscape(formatDate(l.expires_at)) + '</td>' +
+      '<td>' + alEscape(creator) + '</td>' +
+      '<td><span class="al-url" title="' + fullUrl + '">' + fullUrl + '</span>' +
+        '<button class="al-btn al-btn-sm al-btn-copy" onclick="copyAccessLink(\'' + alEscape(l.token) + '\')">复制</button></td>' +
+      '<td>' + (canStop ? '<button class="al-btn al-btn-sm al-btn-stop" onclick="stopAccessLink(\'' + alEscape(l.token) + '\')">停止</button>' : '') +
+        '<button class="al-btn al-btn-sm al-btn-del" onclick="deleteAccessLink(\'' + alEscape(l.token) + '\',\'' + alEscape(l.title) + '\')">删除</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+async function createAccessLink() {
+  const title = document.getElementById('alTitle').value.trim();
+  const days = alClampDays(document.getElementById('alDays').value);
+  if (!title) { showToast('⚠️ 请填写链接标题', 'error'); return; }
+  const body = await alAdminFetch('/admin/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: title, days: days })
+  });
+  if (!body) return;
+  showToast('✅ 链接已创建（有效期 ' + days + ' 天）', 'success');
+  document.getElementById('alTitle').value = '';
+  loadAccessLinks();
+  // 自动复制完整 URL，便于直接发送
+  if (body.url) {
+    copyText(body.url);
+    showToast('✅ 链接已创建，URL 已复制到剪贴板', 'success');
+  }
+}
+
+async function stopAccessLink(token) {
+  if (!confirm('确定停止该链接访问吗？停止后访客将无法打开。')) return;
+  const body = await alAdminFetch('/admin/stop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token })
+  });
+  if (!body) return;
+  showToast('⛔ 链接已停止访问', 'success');
+  loadAccessLinks();
+}
+
+async function deleteAccessLink(token, title) {
+  if (!confirm('确定删除链接「' + title + '」吗？\n此操作不可恢复（保留审计记录）。')) return;
+  const body = await alAdminFetch('/admin/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token })
+  });
+  if (!body) return;
+  showToast('🗑️ 链接已删除', 'success');
+  loadAccessLinks();
+}
+
+function copyAccessLink(token) {
+  copyText(window.location.origin + '/share/' + token);
+  showToast('🔗 分享 URL 已复制', 'success');
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(function () { fallbackCopy(text); });
+  } else { fallbackCopy(text); }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (_) {}
+  document.body.removeChild(ta);
+}
+
+// ===================== SHARE PAGE (v2.2.0 #49, public) =====================
+async function loadSharePage(token) {
+  // 分享页不依赖 Supabase 登录态，直接匿名调用 Edge Function /public（无 JWT）
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('pendingPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'none';
+  document.getElementById('userManagePage').style.display = 'none';
+  document.getElementById('approvalSettingsPage').style.display = 'none';
+  document.getElementById('accessLinksPage').style.display = 'none';
+  document.getElementById('sharePage').style.display = 'block';
+
+  const bodyEl = document.getElementById('shareBody');
+  bodyEl.innerHTML = '<div class="loading">正在加载报表数据...</div>';
+  document.getElementById('shareTitle').textContent = '--';
+  document.getElementById('shareExpiry').textContent = '--';
+  document.getElementById('shareGenerated').textContent = '--';
+
+  let resp, payload;
+  try {
+    resp = await fetch(AL_FN_BASE + '/public?token=' + encodeURIComponent(token), { method: 'GET' });
+  } catch (e) {
+    renderShareError(0, '网络错误');
+    return;
+  }
+  try { payload = await resp.json(); } catch (_) { payload = {}; }
+  if (!resp.ok) { renderShareError(resp.status, payload.error); return; }
+
+  const rows = Array.isArray(payload.data) ? payload.data : [];
+  document.getElementById('shareTitle').textContent = payload.title || '对外报表';
+  document.getElementById('shareExpiry').textContent = formatDate(payload.expires_at);
+  document.getElementById('shareGenerated').textContent = formatDate(payload.generated_at);
+  renderShareData(rows);
+}
+
+function renderShareError(status, errorMsg) {
+  const v = alShareErrorView(status, errorMsg);
+  document.getElementById('shareBody').innerHTML =
+    '<div class="share-state"><div class="state-icon">' + v.icon + '</div>' +
+    '<h2>' + v.title + '</h2><p>' + v.detail + '</p></div>';
+}
+
+function renderShareData(rows) {
+  const k = alShareKpis(rows);
+  let html = '<div class="share-kpi-row">' +
+    '<div class="share-kpi k-total"><div class="k-label">总打印量</div><div class="k-value">' + k.total.toLocaleString() + '</div></div>' +
+    '<div class="share-kpi k-success"><div class="k-label">成功</div><div class="k-value">' + k.success.toLocaleString() + '</div></div>' +
+    '<div class="share-kpi k-fail"><div class="k-label">失败</div><div class="k-value">' + k.fail.toLocaleString() + '</div></div>' +
+    '<div class="share-kpi k-duration"><div class="k-label">平均每次执行（分钟）</div><div class="k-value">' + k.avgDuration.toFixed(1) + '</div></div>' +
+    '</div>';
+  html += '<div class="share-table-box"><h3>📋 执行明细（最近 ' + k.count + ' 条）</h3>';
+  if (!rows.length) {
+    html += '<p style="color:#94a3b8;font-size:13px;">暂无对外展示数据</p>';
+  } else {
+    html += '<table class="share-table"><thead><tr>' +
+      '<th>站点</th><th>执行时间</th><th>总数</th><th>成功</th><th>跳过</th><th>失败</th><th>每次执行（分钟）</th>' +
+      '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr>' +
+        '<td>' + alEscape(r['site']) + '</td>' +
+        '<td>' + alEscape(r['执行时间']) + '</td>' +
+        '<td>' + alEscape(r['总数']) + '</td>' +
+        '<td>' + alEscape(r['成功']) + '</td>' +
+        '<td>' + alEscape(r['跳过']) + '</td>' +
+        '<td>' + alEscape(r['失败']) + '</td>' +
+        '<td>' + alEscape(r['耗时分钟']) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  document.getElementById('shareBody').innerHTML = html;
+}
+
 
 // 读取当前审批模式并更新按钮高亮
 async function loadApprovalMode() {
