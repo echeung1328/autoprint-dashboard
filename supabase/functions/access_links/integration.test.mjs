@@ -64,7 +64,7 @@ function installFetch({ linkRow = activeRow, profile = adminProfile, jwtOk = tru
     if (u.includes('/rest/v1/profiles?')) return new Response(JSON.stringify(profile), { status: 200 });
     if (u.includes('/rest/v1/access_links?select=*&token=')) return new Response(JSON.stringify(linkRow ? [linkRow] : []), { status: 200 });
     if (u.includes('/rest/v1/access_links?select=*&order=')) return new Response(JSON.stringify([activeRow]), { status: 200 });
-    if (u.includes('/rest/v1/ReportAutoPrint?')) return new Response(JSON.stringify([{ site: '上海', 总数: 10, 成功: 9, 跳过: 1, 失败: 0 }]), { status: 200 });
+    if (u.includes('/rest/v1/ReportAutoPrint?')) return new Response(JSON.stringify([{ site: '上海', 总数: 10, 成功: 9, 跳过: 1, 失败: 0, 耗时分钟: 13.0833333333333333 }]), { status: 200 });
     if (u.includes('/rest/v1/access_links_audit') && opts.method === 'POST') return new Response('[]', { status: 201 });
     if (u.includes('/rest/v1/access_links') && opts.method === 'POST') return new Response(JSON.stringify([{ ...activeRow, id: 99 }]), { status: 201 });
     if (u.includes('/rest/v1/access_links?id=eq.') && opts.method === 'PATCH') return new Response(null, { status: 204 });
@@ -90,6 +90,11 @@ let j = await jsonOf(r);
 log('[关键] 有效 token → 200', r.status, 200);
 log('[关键] 返回标题', j.title, '测试链接');
 log('对外数据已返回', Array.isArray(j.data), true);
+log('[关键] 对外数据含耗时分钟', j.data && j.data[0] && Object.prototype.hasOwnProperty.call(j.data[0], '耗时分钟'), true);
+log('[关键] 耗时分钟 round 到 1 位小数', j.data && j.data[0] && j.data[0]['耗时分钟'], 13.1);
+log('对外数据不含来源邮箱', j.data && j.data[0] && Object.prototype.hasOwnProperty.call(j.data[0], 'source_email'), false);
+const reportCall = calls.find(c => c.u.includes('/rest/v1/ReportAutoPrint?'));
+log('[关键] select 白名单含耗时分钟编码', reportCall && reportCall.u.includes('%E8%80%97%E6%97%B6%E5%88%86%E9%92%9F'), true);
 
 installFetch({ linkRow: { ...activeRow, status: 'stopped' } });
 r = await handler(req('https://x.supabase.co/public?token=' + TOKEN));

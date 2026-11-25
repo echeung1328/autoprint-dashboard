@@ -105,12 +105,18 @@ async function listLinks(): Promise<any[]> {
   return await r.json();
 }
 
-// 对外展示数据：复用关键报表卡片（只读聚合，不含 source_email 等内部字段）
+// 对外展示数据：7 字段白名单（site/执行时间/总数/成功/跳过/失败/耗时分钟），不含来源邮箱等内部字段
+// 耗时分钟 = 业务所称「每次执行（分钟）」，round 到 1 位小数后再对外返回
 async function publicReportData(): Promise<any> {
-  const r = await fetch(SUPABASE_URL + '/rest/v1/ReportAutoPrint?select=site,%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4,%E6%80%BB%E6%95%B0,%E6%88%90%E5%8A%9F,%E8%B7%B3%E8%BF%87,%E5%A4%B1%E8%B4%A5&order=%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4.desc&limit=100', { headers: svcHeaders() });
+  const r = await fetch(SUPABASE_URL + '/rest/v1/ReportAutoPrint?select=site,%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4,%E6%80%BB%E6%95%B0,%E6%88%90%E5%8A%9F,%E8%B7%B3%E8%BF%87,%E5%A4%B1%E8%B4%A5,%E8%80%97%E6%97%B6%E5%88%86%E9%92%9F&order=%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4.desc&limit=100', { headers: svcHeaders() });
   if (!r.ok) throw new Error('publicReportData ' + r.status);
   const rows = await r.json();
-  return { rows: Array.isArray(rows) ? rows : [], generated_at: new Date().toISOString() };
+  const safe = Array.isArray(rows) ? rows : [];
+  const formatted = safe.map((row: any) => {
+    const v = Number(row['耗时分钟']);
+    return Object.assign({}, row, { '耗时分钟': Number.isFinite(v) ? Math.round(v * 10) / 10 : null });
+  });
+  return { rows: formatted, generated_at: new Date().toISOString() };
 }
 
 // ---- admin JWT 鉴权 ----
