@@ -19,6 +19,7 @@ import * as XLSX from './xlsx.mjs';
 import { shouldSkipTitle } from './row_filter.mjs';
 import { parseBody, pickSite } from './body_parser.mjs';
 import { signToken } from './approval_token.mjs';
+import { shouldAutoPromote, validateRows, buildSummaryLines } from './approval_mode.mjs';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://uvqjtvonxwsmhntnyest.supabase.co';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('PROJECT_SERVICE_ROLE_KEY') || '';
@@ -230,6 +231,83 @@ async function sendApprovalEmail(inserted: any[]) {
     if (!r.ok) throw new Error('resend ' + r.status + ' ' + (await r.text()).slice(0, 200));
   } catch (e) {
     await sendAlert('审批邮件发送失败', (e && e.message) || String(e));
+  }
+}
+
+// ---- v2.1.0 (issue #65): approval-mode dispatch ----
+// Read the global mode from config RPC. Fail-safe: any error => 'manual'.
+async function getApprovalMode(): Promise<string> {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/get_approval_mode', {
+      headers: { apikey: SERVICE_ROLE, Authorization: 'Bearer ' + SERVICE_ROLE, 'Content-Type': 'application/json' }
+    });
+    if (!r.ok) return 'manual';
+    const v = await r.json();
+    return (typeof v === 'string') ? v : 'manual';
+  } catch (_) {
+    return 'manual';
+  }
+}
+
+// Call promote_staging_ids RPC with service_role; returns parsed jsonb result.
+async function promoteNow(ids: number[]): Promise<any> {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/promote_staging_ids', {
+    method: 'POST',
+    headers: { apikey: SERVICE_ROLE, Authorization: 'Bearer ' + SERVICE_ROLE, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_ids: ids })
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error('promote rpc ' + r.status + ' ' + text.slice(0, 300));
+  return JSON.parse(text);
+}
+
+// Auto mode: validate -> promote -> leave audit trail. On any problem: block + alert,
+// data stays in staging(pending) for manual handling (SOP §7).
+async function autoPromote(inserted: any[]) {
+  const ids = inserted.map((r) => r.id).filter((n: any) => Number.isInteger(n));
+  if (!ids.length) return;
+  const check = validateRows(inserted);
+  if (!check.ok) {
+    const detail = '自动审批校验未通过，数据保留在 staging(pending) 待人工处理:\n' +
+      check.errors.map((e: any) => '  staging#' + e.id + ': ' + e.reasons.join('; ')).join('\n');
+    await sendAlert('自动审批阻断', detail);
+    return;
+  }
+  try {
+    const result = await promoteNow(ids);
+    const resStr = 'promoted=' + result.promoted + ' inserted=' + result.inserted +
+      ' updated=' + result.updated + ' superseded=' + result.superseded;
+    // audit trail: reuse promote_approval_request so the chain stays complete
+    try {
+      await restInsert('promote_approval_request', [{
+        staging_ids: ids,
+        summary: '[AUTO] ' + buildSummaryLines(inserted).join('\n'),
+        status: 'auto_approved',
+        acted_at: new Date().toISOString(),
+        actor_info: 'auto',
+        action_result: resStr,
+        expires_at: new Date().toISOString()
+      }]);
+    } catch (_) { /* audit is best-effort; promotion already succeeded */ }
+    await sendAlert('自动审批转正', '模式=auto，已自动转正 ' + ids.length + ' 条。\n结果: ' + resStr);
+  } catch (e) {
+    await sendAlert('自动审批转正失败', '数据仍在 staging(pending)，可走 SOP §7 手动处理。\n' + ((e && e.message) || String(e)));
+  }
+}
+
+// Dispatch after staging insert: manual => approval email; auto => validate+promote.
+async function handlePostIngest(inserted: any[]) {
+  if (!inserted || !inserted.length) return;
+  try {
+    const mode = await getApprovalMode();
+    if (shouldAutoPromote(mode)) {
+      await autoPromote(inserted);
+    } else {
+      await sendApprovalEmail(inserted);
+    }
+  } catch (e) {
+    // best-effort: never block ingestion; fall back to approval email
+    await sendApprovalEmail(inserted);
   }
 }
 
@@ -567,8 +645,8 @@ Deno.serve(async (req) => {
       }
       try {
         const insertedBody = await restInsertReturning('report_autoprint_staging', [rec]);
-        // #35: approval email (best-effort; never throws)
-        await sendApprovalEmail(insertedBody);
+        // #35/#65: mode dispatch (manual=approval email, auto=validate+promote)
+        await handlePostIngest(insertedBody);
         // D1: BODY wins — any attachments are archived raw but NOT parsed
         for (const a of atts) {
           try {
@@ -692,8 +770,8 @@ Deno.serve(async (req) => {
   if (stagingRows.length > 0) {
     try {
       const insertedRows = await restInsertReturning('report_autoprint_staging', stagingRows);
-      // #35: approval email (best-effort; never throws)
-      await sendApprovalEmail(insertedRows);
+      // #35/#65: mode dispatch (manual=approval email, auto=validate+promote)
+      await handlePostIngest(insertedRows);
       const updates = stagingRows.filter((r) => r.conflict_action === 'update').length;
       return new Response('ok-staged-' + stagingRows.length + ' (update=' + updates + ')', OK);
     } catch (e) {
