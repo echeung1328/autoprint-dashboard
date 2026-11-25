@@ -67,8 +67,9 @@ jobs:
           HITS=$(grep -rInE "$PATTERN" . \
             --exclude-dir=.git --exclude-dir=node_modules \
             --exclude=SECRETS_LOCAL.md --exclude=rls-security-check.yml || true)
-          # index.html 里的 anon key 是设计上公开的（靠 RLS 保护），单独放行
-          HITS=$(echo "$HITS" | grep -v '^\./index\.html:' || true)
+          # index.html 与 scripts/validate-rls.js 里的 anon key 是同一个公开值（仅 anon 读权限，靠 RLS 保护），按行精准放行
+          # 注意：只放行这两处 anon key 命中行；其余任何文件、任何凭证（service_role/whsec/ghp/sk）仍然严格拦截
+          HITS=$(echo "$HITS" | grep -v '^\./index\.html:' | grep -v '^\./scripts/validate-rls\.js:[0-9]*:.*SUPABASE_ANON_KEY' || true)
           if [ -n "$HITS" ]; then
             echo "$HITS" | sed -E 's/(:[0-9]+:).*/\1 [REDACTED — 命中疑似明文凭证]/'
             echo "::error::检测到疑似明文凭证，禁止入库。请改用 Supabase Secrets / GitHub Secrets，并轮换已泄露的凭证。"
