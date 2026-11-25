@@ -1,7 +1,8 @@
-# AutoPrint 系统 - 贡献指南 v1.0
+# AutoPrint 系统 - 贡献指南 v1.1
 
-**文档版本**: V1.0  
+**文档版本**: V1.1  
 **创建日期**: 2026-06-30  
+**最后更新**: 2026-11-25  
 **作者**: 高级开发工程师  
 **审核**: 待审核  
 
@@ -12,6 +13,7 @@
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
 | V1.0 | 2026-06-30 | 初始版本 | 高级开发工程师 |
+| V1.1 | 2026-11-25 | 第 7 节「测试规范」迭代：对齐项目实际 node 测试体系；新增测试记录透明性要求（关键用例依据+截图索引）、人工测试标注、GitHub 测试记录方式 | 高级开发工程师 |
 
 ---
 
@@ -431,44 +433,96 @@ Relates to #456
 
 ## 7. 测试规范
 
-### 7.1 测试层级
+> **分工原则（2026-11-25 确立）**：AI 负责自动化测试（单元测试 / 集成测试 / 语法编译）与测试记录整理；用户负责线上手动测试并提供测试结果截图；需要在 GitHub Issue 评论中引用截图时，由 AI 负责上传并嵌入。详见「7.5 截图依据与上传」。
 
-| 层级 | 工具 | 覆盖范围 |
-|------|------|----------|
-| 单元测试 | Jest | 工具函数、数据处理逻辑 |
-| 集成测试 | Jest + Supabase | API 调用、数据库操作 |
-| E2E 测试 | Playwright | 用户流程（登录、查看看板） |
+### 7.1 测试层级（项目实际体系）
 
-### 7.2 编写测试用例
+本项目为静态前端 + Deno Edge Function，测试以 Node 原生 `.test.mjs` 为主，**不引入 Jest/Playwright**（无构建链、避免额外依赖）。
 
-**示例: 测试数据处理函数**
+| 层级 | 实际工具 | 覆盖范围 | 位置示例 |
+|------|----------|----------|----------|
+| 单元测试 | `node *.test.mjs`（Node 内置断言风格） | 工具函数、解析逻辑、模式判断 | `approval_mode.test.mjs`、`body_parser.test.mjs`、`row_filter.test.mjs` |
+| 集成测试 | `node *.test.mjs` + esbuild 编译 + mock `fetch`/`Deno` | Edge Function 端到端逻辑（不发真实网络请求） | `email_inbox_poc/integration.test.mjs`、`promote_approval/integration.test.mjs` |
+| 静态检查 | `node --check`、esbuild 编译 | 语法正确性、可编译性 | 发布前必跑 |
+| 线上端到端 | 人工实操 + 数据库交叉核实 | 真实邮件链路、审批转正/阻断、看板渲染 | GitHub Issue 验证报告（见 7.6） |
+
+### 7.2 编写/运行测试用例
+
+- 每个测试文件头部必须写清运行命令与关联 Issue 号，例如 `// Run: node approval_mode.test.mjs (issue #65)`。
+- 用统一的 `check(cond, desc)` / `ok(cond, name)` 风格逐条断言，每条陈述**描述被测行为**（如「数值不守恒被拒绝」），而非「test case 1」。
+- 结尾打印 `N/M passed` 并以 `process.exit(failed === 0 ? 0 : 1)` 退出，便于 CI/脚本判定。
+- 新增功能必须同时补单测（纯逻辑）与集成测试场景（涉及 RPC / 分流）；改动现有函数必须补回归用例。
+- 关键用例（安全闸、fail-safe、阻断）建议在描述前加 `[关键]` 标记，便于测试记录中重点呈现。
+
+**示例**（沿用项目实际风格）：
 ```javascript
-// utils.test.js
-import { processData } from './utils.js';
-
-describe('processData', () => {
-  it('should group records by date', () => {
-    const records = [
-      { '执行时间': '2026-06-30T09:00:00', '总数': 100 },
-      { '执行时间': '2026-06-30T10:00:00', '总数': 50 },
-      { '执行时间': '2026-06-29T09:00:00', '总数': 80 }
-    ];
-
-    const result = processData(records);
-
-    expect(Object.keys(result)).toHaveLength(2);
-    expect(result['2026-06-30'].total).toBe(150);
-    expect(result['2026-06-29'].total).toBe(80);
-  });
-
-  it('should handle empty input', () => {
-    const result = processData([]);
-    expect(result).toEqual({});
-  });
-});
+// approval_mode.test.mjs — Run: node approval_mode.test.mjs (issue #65)
+let failed = 0, total = 0;
+function check(cond, desc, extra) {
+  total++;
+  if (cond) console.log('PASS — ' + desc);
+  else { console.error('FAIL — ' + desc + (extra !== undefined ? ' | got=' + JSON.stringify(extra) : '')); failed++; }
+}
+check(validateRows([badSum]).ok === false, '[关键] 数值不守恒被拒绝');
+console.log('\n--- ' + (total - failed) + '/' + total + ' passed ---');
+process.exit(failed === 0 ? 0 : 1);
 ```
 
-### 7.3 手动测试检查清单
+### 7.3 测试记录文档（透明性核心）
+
+每次发版或功能验证必须产出一份测试记录文档，作为「测了什么、依据在哪」的**可追溯单一来源**：
+
+- **命名**：`docs/AutoPrint_vX.Y.Z_测试记录_v主.次_模型名.md`（如 `AutoPrint_v2.1.0_测试记录_v1.0_Hunyuan-Hy.md`）。
+- **必备四板块**：
+  1. **测试构成总览**——各套件项数与合计（如 22+37+10+38+语法+编译 = 107 项）；
+  2. **关键用例依据表**——逐条列「用例 / 输入 / 预期 / 实际 / 结果 / 依据」；
+  3. **自动化边界说明**——明确哪些能自动化、哪些必须人工；
+  4. **人工测试清单**——见 7.4。
+- **关键用例必须可复核**：
+  - 逻辑测试（无界面）：记录输入 / 预期 / 实际三条即可，**不截图**（终端文本截图无复核价值，且易过时）；
+  - UI / 端到端测试（有界面）：必须附截图依据，链接指向 GitHub 上传后的稳定 URL（见 7.5）。
+- **数据类功能**：验收截图中的数字必须有数据库 SQL 复核（如「汇总 25 = 京 8 + 沪 17」）才算通过——沿用 v2.0.0 复盘教训。
+
+### 7.4 人工测试标注（无法自动化测试的处理）
+
+**凡无法自动化验证的项目，必须在测试记录中显式标注「需人工测试」，禁止留白或默认省略。**
+
+常见需人工的场景：真实邮件投递与收件箱分类、审批邮件点击与二次确认、看板视觉渲染、跨浏览器兼容、跨天稳定性观察、告警邮件是否落入垃圾箱。
+
+标注格式（写入测试记录「人工测试清单」表）：
+
+| 测试项 | 操作步骤 | 期望结果 | 为何不能自动化 | 执行人 | 证据 |
+|--------|----------|----------|----------------|--------|------|
+| 告警邮件投递 | 发不规范邮件 → 查收件箱 | 收到阻断告警 | 依赖真实 Resend 投递 + Outlook 分类，mock 无法覆盖 | 用户 | 截图链接 |
+
+- 标注后由用户按清单执行，结果回填 Issue 验证报告（7.6）。
+- **回顾发现某用例需补充人工测试时**：在该用例依据表的「依据/备注」列追加 `⚠️ 需人工补测` 并说明原因，同时在对应 GitHub Issue 留评论，形成可追溯闭环——这正是「Issue 评论段落」做不到的细粒度追踪，故用 7.6 的结构化报告承载。
+
+### 7.5 截图依据与上传
+
+- **何时截图**：仅 UI / 端到端测试；逻辑测试用文本记录（7.3）。
+- **上传流程**：用户把测试截图以剪贴板图片附上 → AI 上传到 GitHub 附件 → 返回稳定 URL → 嵌入测试记录与 Issue 评论。
+- **上传命令**（仓库需 push 权限；`$REPO_ID` 用 `gh api repos/<owner>/<repo> --jq .id` 获取，本仓库为 `1284825802`）：
+  ```bash
+  gh api --method POST "https://uploads.github.com/user-attachments/assets?repository_id=$REPO_ID&name=<文件名>&content_type=image/png" --input "<截图绝对路径>" --jq .url
+  ```
+- 返回 `https://github.com/user-attachments/assets/...` 直接写进 Markdown `![说明](URL)` 即可渲染。
+- **脱敏**：本仓库为 PUBLIC，截图含邮箱 / SharePoint 链接 / token 时需评估；敏感信息打码或改用文字描述。
+
+### 7.6 GitHub 上的测试记录方式
+
+**问题**：把测试结果零散写在 Issue 的某个评论段落，无法对单个用例做「需补测 / 转人工」的细粒度追踪。
+
+**分层做法**：
+
+| 目标 | 载体 | 做法 |
+|------|------|------|
+| 单一可追溯来源 | 仓库 `docs/` 测试记录文档 | 7.3 四板块，逐用例可标注、可版本化 |
+| 团队回顾入口 | 功能 Issue 的**结构化验证报告评论** | 标题 + 分路径小节 + 证据表 + 截图；每条路径对应测试用例，可 `@` 负责人讨论 |
+| 细粒度追踪 | 测试记录文档的依据表 + Issue 评论 | 单个用例的补测/转人工在「依据/备注」列标注 `⚠️ 需人工补测`，并在 Issue 留评论留痕 |
+| 自动化结果可视化（进阶，本期未启用） | GitHub Actions + JUnit | 测试脚本产出 JUnit XML，用 `dorny/test-reporter` 在 Checks/PR 显示逐用例结果；因本期「脚本不动」暂不启用，见 7.7 改进路线 |
+
+### 7.7 手动测试检查清单（基线）
 
 **功能测试**:
 - [ ] 登录功能正常（密码 + 魔法链接）
@@ -486,6 +540,12 @@ describe('processData', () => {
 - [ ] 页面加载时间 < 2 秒
 - [ ] 图表渲染时间 < 1 秒
 - [ ] 无明显卡顿
+
+### 7.8 改进路线（后续迭代）
+
+- 统一测试入口脚本：一键运行全部套件并把结果落盘为结构化文件（JSON / Markdown），让「107 项全绿」可机器复核；
+- 测试脚本产出 JUnit XML，接入 GitHub Actions 测试报告，在 PR/Checks 逐用例显示；
+- 关键用例（安全闸 / fail-safe）补 `test-case` Issue 模板，实现 Issue 级别的用例跟踪。
 
 ---
 
