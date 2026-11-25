@@ -69,13 +69,32 @@
 
 以下项目**无法在纯本地自动化完成**，已按规范标注，待 Edge Function 部署后由人工验证：
 
-| # | 项目 | 为何不能自动化 | 验证方式 | 负责人 |
+| # | 项目 | 为何不能自动化 | 验证方式 | 负责人 | 状态 |
+|---|---|---|---|---|---|
+| M1 | 真实 Supabase 网关行为 | mock fetch 无法覆盖网关 rewrite / JWT 校验细节 | 部署后 curl 实测 /public 与 /admin | AI | ✅ 已完成（见 §3.1） |
+| M2 | 真实 admin JWT 端到端 | 需真实登录会话签发 JWT | 浏览器登录后调用 /admin/create | 用户 | ⏳ 待用户 verification |
+| M3 | `/share/[token]` 前端页面 | 属于第 2 批（T4），本批未实施 | 第 2 批完成后验证 | 用户 | ⏳ 第 2 批 |
+| M4 | `/admin/access-links` 管理页 | 属于第 2 批（T5），本批未实施 | 第 2 批完成后验证 | 用户 | ⏳ 第 2 批 |
+| M5 | 对外数据脱敏复核 | 需业务确认哪些字段可对外 | 与用户确认字段白名单 | 用户 | ⚠️ 待确认 |
+
+### 3.1 线上实测记录（2026-11-25，Edge Function 部署后）
+
+部署：`access_links` function version 1，`verify_jwt=false`，status ACTIVE。以下均为生产网关真实 HTTP 请求（非 mock）：
+
+| 场景 | 请求 | 预期 | 实际 | 结果 |
 |---|---|---|---|---|
-| M1 | 真实 Supabase 网关行为 | mock fetch 无法覆盖网关 rewrite / JWT 校验细节 | 部署后 curl 实测 /public 与 /admin | AI+用户 |
-| M2 | 真实 admin JWT 端到端 | 需真实登录会话签发 JWT | 浏览器登录后调用 /admin/create | 用户 |
-| M3 | `/share/[token]` 前端页面 | 属于第 2 批（T4），本批未实施 | 第 2 批完成后验证 | 用户 |
-| M4 | `/admin/access-links` 管理页 | 属于第 2 批（T5），本批未实施 | 第 2 批完成后验证 | 用户 |
-| M5 | 对外数据脱敏复核 | 需业务确认哪些字段可对外 | 与用户确认字段白名单 | 用户 |
+| 无 token | `GET /public` | 403 | 403 `链接不存在或已删除` | ✅ |
+| token 格式非法 | `GET /public?token=abc123` | 403 | 403 `链接不存在或已删除` | ✅ |
+| token 合法但不存在 | `GET /public?token=<43位不存在>` | 403 | 403 `链接不存在或已删除` | ✅ |
+| 无 JWT 访问管理端 | `GET /admin/list` | 401 | 401 `缺少访问令牌` | ✅ |
+| 未知端点 | `GET /unknown` | 400 | 400 `未知端点` | ✅ |
+| **active 链接放行** | `GET /public?token=<active>` | 200 + 数据 | 200，返回 title/过期时间/报表数据，**字段白名单正确（无 source_email）** | ✅ |
+| **stopped 拒绝** | `GET /public?token=<stopped>` | 403 | 403 `链接已停止访问` | ✅ |
+| **stopped 优先于过期** | stopped + expires_at 设为过去 | 403 stopped | 403 `链接已停止访问`（非"已过期"） | ✅ |
+| **纯过期拒绝** | active + expires_at 设为过去 | 403 | 403 `链接已过期` | ✅ |
+| 测试数据清理 | 硬删测试链接 | 表恢复空 | links=0, audit=0 | ✅ |
+
+> 说明：active/stopped/expired 三态通过 service_role 临时插入测试链接实测，验证后已硬删清理，未留脏数据；admin CRUD 写操作（create/stop/delete）的真实 JWT 端到端由用户在第 2 批管理页完成后验证（M2）。
 
 ---
 
@@ -93,6 +112,6 @@
 
 ## 5. 遗留与下一步
 
-- 本批**未部署** Edge Function（按纪律留待 merge master 后统一部署）。
-- 第 2 批（T4 对外页 + T5 管理页）待本批上线验证效果后启动。
-- ⚠️ 待确认：对外数据字段白名单（当前复用主表 site/执行时间/总数/成功/跳过/失败，不含来源邮箱）。
+- Edge Function `access_links` 已于 2026-11-25 部署至生产（version 1，verify_jwt=false），公开端点线上实测全部通过（见 §3.1）。
+- 第 2 批（T4 对外页 + T5 管理页）待启动；届时可一并验证 admin CRUD 真实 JWT 端到端（M2）。
+- ⚠️ 待确认：对外数据字段白名单（当前复用主表 site/执行时间/总数/成功/跳过/失败，不含来源邮箱）——线上实测已确认该白名单生效，待业务最终拍板是否增减字段。
