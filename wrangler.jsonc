@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "autoprint-dashboard",
+  "compatibility_date": "2026-11-23",
+  // UAT 静态资源修复（2026-11-26）
+  // 1. 只发布 public/ 白名单目录（构建时仅放入 index.html），避免整个仓库源码暴露
+  // 2. SPA fallback：未知路径回退 index.html，修复 /share/<token> 深链 404
+  // 域名路由继续由 Cloudflare DNS 的 Worker 记录管理（已在运行，不改）
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}
