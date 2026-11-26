@@ -15,7 +15,7 @@
   --------------- --------------- --------------- ----------------
   V1.0            2026-06-30      初始版本        高级开发工程师
   V1.1            2026-07-30      对齐实际部署策略：Netlify 改手动部署(自动发布关闭省额度)；新增 Vercel 后备平台(Ignored Build Step 仅构建 production)；明确 develop/master 分支模型；修正"自动部署(推荐)"为按需手动部署        高级开发工程师
-  V1.2            2026-11-26      新增第 2.3 节 CI/CD 链路全景(Netlify 手动/Vercel 自动/Cloudflare Worker 自动三链路)；新增第 2.4 节域名与 DNS 设置(5 域名归属 + DNS 层级 + UAT Worker 配置)；环境划分补 UAT 站；对齐三平台安全配置        高级开发工程师
+  V1.2            2026-11-26      新增第 2.3 节 CI/CD 链路全景(Netlify 手动/Vercel 自动/Cloudflare Worker 自动三链路)；新增第 2.4 节域名与 DNS 设置(5 域名归属 + DNS 层级 + UAT Worker 配置)；环境划分补 UAT 站；对齐三平台安全配置；新增第 10 节专项手册索引(引用 access_links 部署与管理手册)        高级开发工程师
 
   ----------------------------------------------------------------
 
@@ -35,6 +35,8 @@
 6.  备份与恢复
 7.  常见问题排查
 8.  应急响应流程
+9.  附录
+10. 专项手册索引（v1.2 新增）
 
 ------------------------------------------------------------------------
 
@@ -290,6 +292,15 @@ https://autoprint-dashboard.vercel.app 即可（master 推送已自动同步）�
 **验证策略**:
 
     SELECT * FROM pg_policies WHERE tablename = 'ReportAutoPrint';
+
+#### 3.2.3 Edge Function 部署（access_links）
+
+免登录访问链接（对外分享）系统的 Edge Function `access_links`、其 DB 迁移与 Secrets 配置，因内容独立且面向管理员运维，已成文专项手册：
+
+> 📘 **《AutoPrint 免登录访问链接（access_links）部署与管理手册 v1.0》**
+> 仓库路径：`docs/AutoPrint_access_links部署与管理手册_v1.0_Hunyuan-Hy.md`
+> 资料库权威版：https://www.workbuddy.cn/space/d/zKcgtlkV0o06ElzCgopZy4
+> 覆盖：DB 迁移 / Secrets（PROJECT_ 前缀）/ 函数部署（`--no-verify-jwt`）/ 管理页创建·停止·删除 / 访客端状态 / 故障排查。
 
 ------------------------------------------------------------------------
 
@@ -634,6 +645,7 @@ backup"
 - **GitHub 仓库**: https://github.com/echeung1328/autoprint-dashboard
 - **Netlify 文档**: https://docs.netlify.com
 - **Supabase 文档**: https://supabase.com/docs
+- **access_links 部署与管理手册**: https://www.workbuddy.cn/space/d/zKcgtlkV0o06ElzCgopZy4
 
 ### 9.3 检查清单
 
@@ -646,6 +658,21 @@ Trigger deploy → Deploy without cache；Vercel 后备随 master 自动构建�
 数据加载正常 - \[ \] 认证功能正常 - \[ \] 响应式布局正常 - \[ \]
 控制台没有错误 - \[ \] （如启用 Vercel 后备）打开
 https://autoprint-dashboard.vercel.app 确认已同步
+
+------------------------------------------------------------------------
+
+## 10. 专项手册索引（v1.2 新增）
+
+本手册为部署运维总入口。以下专项主题因内容独立、面向特定运维场景，另立手册，需要时按链接查阅：
+
+| 专项手册 | 适用场景 | 仓库路径 | 资料库权威版 |
+|---|---|---|---|
+| 免登录访问链接（access_links）部署与管理手册 v1.0 | 分享链接/管理页的部署、创建·停止·删除、访客端状态、故障排查 | `docs/AutoPrint_access_links部署与管理手册_v1.0_Hunyuan-Hy.md` | https://www.workbuddy.cn/space/d/zKcgtlkV0o06ElzCgopZy4 |
+| 版本发布 SOP v1.2 | 发版登记、版本号语义、app_versions 登记 | `docs/AutoPrint_版本发布SOP_v1.0.md` | https://www.workbuddy.cn/space/d/2nbHi0lc2V80qyS0j1GNS6 |
+| 回滚保险操作清单 v1.0 | 变更前的回滚保险与应急操作 | — | https://www.workbuddy.cn/space/d/rZyDdLdZwY1vGCq04F0IaW |
+| 邮件摄取（email_ingest）SOP 操作手册 v1.0 | 邮件→Webhook→Supabase 摄取链路运维 | `docs/email_ingest_SOP操作手册_v1.0.md` | — |
+
+> 资料库链接为云端权威版本（内容更新以云端为准）；仓库路径为源文件位置（代码改动走 Git 流程）。两者应保持一致。
 
 ------------------------------------------------------------------------
 
