@@ -177,6 +177,12 @@
   .share-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .share-table th, .share-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
   .share-table th { background: #f8fafc; color: #475569; font-weight: 600; }
+  /* 数字列右对齐（表格数字） */
+  .share-table th.num, .share-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* 总数列 Excel 式数据条：复用品牌主蓝 #002FA7 的 16% 透明实心条，不新增颜色 */
+  .share-table td.bar-cell { position: relative; }
+  .share-table td.bar-cell .bar-fill { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); height: 20px; background: rgba(0,47,167,0.16); border-radius: 3px; }
+  .share-table td.bar-cell .bar-val { position: relative; z-index: 1; }
   .share-footer { text-align: center; color: #94a3b8; font-size: 12px; padding: 24px; }
 
   /* ===== Access Links: 管理页 (v2.2.0 #50) ===== */
@@ -584,7 +590,15 @@ function alShareKpis(rows) {
   return { total: total, success: success, skipped: skipped, fail: fail, avgDuration: avgDur, count: arr.length };
 }
 
-// 每报销单平均耗时（秒）= 耗时分钟 × 60 ÷ 成功（v2.3.0 #70）
+// 四舍五入为整数（v2.3.0 Prototype）：非有限数字返回 null，展示层以「—」兜底
+function alRoundInt(v) {
+  if (v == null || v === '') return null;
+  var n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n);
+}
+
+// 每报销单平均耗时（秒，整数）= 耗时分钟 × 60 ÷ 成功（v2.3.0 #70）
 // 成功<=0 或任一字段非有限数字时返回 null（展示层显示「—」，避免除零 / NaN / Infinity）
 function alPerOrderSeconds(row) {
   if (!row) return null;
@@ -595,7 +609,7 @@ function alPerOrderSeconds(row) {
   if (!Number.isFinite(dur) || !Number.isFinite(ok) || ok <= 0 || dur < 0) return null;
   var sec = (dur * 60) / ok;
   if (!Number.isFinite(sec)) return null;
-  return Math.round(sec * 10) / 10;
+  return Math.round(sec);
 }
 
 // 条数钳制：非法→7；<1→1；>365→365（与后端 clampRowLimit 对齐，v2.3.0 #72）
@@ -827,15 +841,26 @@ function showAccessLinks() {
   loadSiteOptions();
 }
 
-// 动态加载站点下拉选项（v2.3.0 #71），失败时保留「全部站点」默认项
+// 动态加载站点下拉选项（v2.3.0 #71）；旧版后端无 /admin/sites 时静默回退本地已知站点，不弹报错
 async function loadSiteOptions() {
   const sel = document.getElementById('alScope');
   if (!sel) return;
-  const body = await alAdminFetch('/admin/sites', { method: 'GET' });
-  if (!body || !Array.isArray(body.sites)) return;
+  let sites = ['北京', '上海'];  // 与 RLS get_my_site_scope() 兜底一致
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const resp = await fetch(AL_FN_BASE + '/admin/sites', {
+        headers: { Authorization: 'Bearer ' + session.access_token }
+      });
+      if (resp.ok) {
+        const body = await resp.json();
+        if (body && Array.isArray(body.sites) && body.sites.length) sites = body.sites;
+      }
+    }
+  } catch (_) { /* 静默回退，不干扰创建链接主流程 */ }
   const cur = sel.value || 'ALL';
   let html = '<option value="ALL">🌐 全部站点</option>';
-  body.sites.forEach(function (s) {
+  sites.forEach(function (s) {
     html += '<option value="' + alEscape(s) + '">' + alEscape(s) + '</option>';
   });
   sel.innerHTML = html;
@@ -993,26 +1018,32 @@ function renderShareData(rows, rowLimit) {
     '<div class="share-kpi k-total"><div class="k-label">总打印量</div><div class="k-value">' + k.total.toLocaleString() + '</div></div>' +
     '<div class="share-kpi k-success"><div class="k-label">成功</div><div class="k-value">' + k.success.toLocaleString() + '</div></div>' +
     '<div class="share-kpi k-fail"><div class="k-label">失败</div><div class="k-value">' + k.fail.toLocaleString() + '</div></div>' +
-    '<div class="share-kpi k-duration"><div class="k-label">平均每次执行（分钟）</div><div class="k-value">' + k.avgDuration.toFixed(1) + '</div></div>' +
+    '<div class="share-kpi k-duration"><div class="k-label">平均每次执行（分钟）</div><div class="k-value">' + (alRoundInt(k.avgDuration) == null ? '—' : alRoundInt(k.avgDuration)) + '</div></div>' +
     '</div>';
   html += '<div class="share-table-box"><h3>📋 执行明细（最近 ' + limitText + ' 条）</h3>';
   if (!rows.length) {
     html += '<p style="color:#94a3b8;font-size:13px;">暂无对外展示数据</p>';
   } else {
+    // 数据条按本页总数最大值归一化；全 0 时不画条，避免除零
+    var maxTotal = rows.reduce(function (m, r) { return Math.max(m, Number(r['总数']) || 0); }, 0);
     html += '<table class="share-table"><thead><tr>' +
-      '<th>站点</th><th>执行时间</th><th>总数</th><th>成功</th><th>跳过</th><th>失败</th><th>每次执行（分钟）</th><th>每报销单平均耗时（秒）</th>' +
+      '<th>站点</th><th>执行时间</th><th class="num">总数</th><th class="num">成功</th><th class="num">跳过</th><th class="num">失败</th><th class="num">每次执行（分钟）</th><th class="num">每报销单平均耗时（秒）</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var perSec = alPerOrderSeconds(r);
+      var durInt = alRoundInt(r['耗时分钟']);
+      var totalNum = Number(r['总数']) || 0;
+      var barWidth = maxTotal > 0 ? Math.round((totalNum / maxTotal) * 100) : 0;
+      var barHtml = barWidth > 0 ? '<span class="bar-fill" style="width:' + barWidth + '%"></span>' : '';
       html += '<tr>' +
         '<td>' + alEscape(r['site']) + '</td>' +
         '<td>' + alEscape(alFormatExecTime(r['执行时间'])) + '</td>' +
-        '<td>' + alEscape(r['总数']) + '</td>' +
-        '<td>' + alEscape(r['成功']) + '</td>' +
-        '<td>' + alEscape(r['跳过']) + '</td>' +
-        '<td>' + alEscape(r['失败']) + '</td>' +
-        '<td>' + alEscape(r['耗时分钟']) + '</td>' +
-        '<td>' + (perSec == null ? '—' : alEscape(perSec)) + '</td>' +
+        '<td class="num bar-cell">' + barHtml + '<span class="bar-val">' + alEscape(totalNum) + '</span></td>' +
+        '<td class="num">' + alEscape(r['成功']) + '</td>' +
+        '<td class="num">' + alEscape(r['跳过']) + '</td>' +
+        '<td class="num">' + alEscape(r['失败']) + '</td>' +
+        '<td class="num">' + (durInt == null ? '—' : durInt) + '</td>' +
+        '<td class="num">' + (perSec == null ? '—' : perSec) + '</td>' +
         '</tr>';
     });
     html += '</tbody></table>';
@@ -1394,8 +1425,9 @@ function renderVersionsTimeline(rows) {
 }
 
 function formatDate(iso) {
+  if (iso == null || iso === '') return '—';
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
+  if (isNaN(d.getTime())) return '—';
   return d.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 

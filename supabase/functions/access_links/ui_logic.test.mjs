@@ -20,7 +20,7 @@ const pureSrc = match[1];
 let sandbox;
 try {
   // 用函数构造器把纯逻辑块注入局部作用域并返回被测函数
-  sandbox = new Function(pureSrc + '\nreturn { alParseShareToken, alIsAdminLinksPath, alClampDays, alLinkStatus, AL_STATUS_META, alShareErrorView, alShareKpis, alPerOrderSeconds, alClampRows, alFormatExecTime, alEscape };')();
+  sandbox = new Function(pureSrc + '\nreturn { alParseShareToken, alIsAdminLinksPath, alClampDays, alLinkStatus, AL_STATUS_META, alShareErrorView, alShareKpis, alRoundInt, alPerOrderSeconds, alClampRows, alFormatExecTime, alEscape };')();
 } catch (e) {
   console.error('FAIL — 纯逻辑块求值失败: ' + e.message);
   process.exit(1);
@@ -96,11 +96,20 @@ check(kEmpty.total === 0 && kEmpty.avgDuration === 0 && kEmpty.count === 0, '空
 const kNull = sandbox.alShareKpis([{ '总数': null, '耗时分钟': 'abc' }]);
 check(kNull.total === 0 && kNull.avgDuration === 0, '脏数据（null/非数字）安全归零');
 
-// ---- 每报销单平均耗时（秒）(v2.3.0 #70) ----
+// ---- 四舍五入整数 (v2.3.0 Prototype：数字整数显示) ----
+check(sandbox.alRoundInt(58.5) === 59, '58.5 四舍五入 → 59');
+check(sandbox.alRoundInt(58.4) === 58, '58.4 四舍五入 → 58');
+check(sandbox.alRoundInt('13.08') === 13, '数字字符串可解析并取整');
+check(sandbox.alRoundInt(0) === 0, '0 保持 0');
+check(sandbox.alRoundInt(null) === null, 'null 返回 null（展示层—）');
+check(sandbox.alRoundInt('') === null, '空串返回 null');
+check(sandbox.alRoundInt('abc') === null, '非数字返回 null');
+
+// ---- 每报销单平均耗时（秒，整数）(v2.3.0 #70 + Prototype) ----
 const pos = sandbox.alPerOrderSeconds({ '耗时分钟': 58.5, '成功': 128 });
-check(pos === 27.4, '[关键] 58.5分/128单 = 27.4秒（×60÷成功，round 1位）', pos);
+check(pos === 27, '[关键] 58.5分/128单 = 27秒（×60÷成功，四舍五入整数）', pos);
 check(sandbox.alPerOrderSeconds({ '耗时分钟': 12, '成功': 18 }) === 40, '12分/18单 = 40秒（整除）', sandbox.alPerOrderSeconds({ '耗时分钟': 12, '成功': 18 }));
-check(sandbox.alPerOrderSeconds({ '耗时分钟': 13.08, '成功': 8 }) === 98.1, '13.08分/8单 = 98.1秒', sandbox.alPerOrderSeconds({ '耗时分钟': 13.08, '成功': 8 }));
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 13.08, '成功': 8 }) === 98, '13.08分/8单 → 98秒（整数）', sandbox.alPerOrderSeconds({ '耗时分钟': 13.08, '成功': 8 }));
 check(sandbox.alPerOrderSeconds({ '耗时分钟': 10, '成功': 0 }) === null, '[关键] 成功=0 返回 null（防除零）');
 check(sandbox.alPerOrderSeconds({ '耗时分钟': 10, '成功': -3 }) === null, '成功为负返回 null');
 check(sandbox.alPerOrderSeconds({ '耗时分钟': 10, '成功': 'abc' }) === null, '成功非数字返回 null');
