@@ -20,7 +20,7 @@ const pureSrc = match[1];
 let sandbox;
 try {
   // 用函数构造器把纯逻辑块注入局部作用域并返回被测函数
-  sandbox = new Function(pureSrc + '\nreturn { alParseShareToken, alIsAdminLinksPath, alClampDays, alLinkStatus, AL_STATUS_META, alShareErrorView, alShareKpis, alPerOrderSeconds, alEscape };')();
+  sandbox = new Function(pureSrc + '\nreturn { alParseShareToken, alIsAdminLinksPath, alClampDays, alLinkStatus, AL_STATUS_META, alShareErrorView, alShareKpis, alPerOrderSeconds, alClampRows, alFormatExecTime, alEscape };')();
 } catch (e) {
   console.error('FAIL — 纯逻辑块求值失败: ' + e.message);
   process.exit(1);
@@ -109,6 +109,25 @@ check(sandbox.alPerOrderSeconds({ '耗时分钟': 10 }) === null, '缺成功字�
 check(sandbox.alPerOrderSeconds(null) === null, '空行返回 null');
 check(sandbox.alPerOrderSeconds({ '耗时分钟': null, '成功': 5 }) === null, '耗时 null 返回 null');
 check(sandbox.alPerOrderSeconds({ '耗时分钟': 1, '成功': 3 }) === 20, '1分/3单 = 20秒（除不尽 round）', sandbox.alPerOrderSeconds({ '耗时分钟': 1, '成功': 3 }));
+
+// ---- 最近 N 条钳制 (v2.3.0 #72) ----
+check(sandbox.alClampRows(7) === 7, '合法条数原样返回');
+check(sandbox.alClampRows(999) === 365, '[关键] 超上限钳制到 365');
+check(sandbox.alClampRows(0) === 1, '下界钳制到 1');
+check(sandbox.alClampRows(-3) === 1, '负数钳制到 1');
+check(sandbox.alClampRows('abc') === 7, '非数字回退默认 7');
+check(sandbox.alClampRows('50') === 50, '数字字符串可解析');
+check(sandbox.alClampRows(7.9) === 7, '小数向下取整');
+
+// ---- 执行时间 UTC+8 + 星期几 (v2.3.0 用户新增) ----
+check(sandbox.alFormatExecTime('2026-11-26T01:30:00+00:00') === '2026-11-26 09:30 周四', '[关键] UTC 时间转北京时间带星期');
+check(sandbox.alFormatExecTime('2026-11-26T00:00:00+00:00') === '2026-11-26 08:00 周四', 'UTC 00:00 → 北京 08:00');
+check(sandbox.alFormatExecTime('2026-11-25T16:00:00Z') === '2026-11-26 00:00 周四', 'Z 结尾 +8 跨日');
+check(sandbox.alFormatExecTime('2026-11-25T15:30:00Z') === '2026-11-25 23:30 周三', '临近午夜仍为当日周三');
+check(sandbox.alFormatExecTime('2026-11-22T23:30:00Z') === '2026-11-23 07:30 周一', '周日 UTC 跨到北京周一');
+check(sandbox.alFormatExecTime('not-a-date') === 'not-a-date', '非法时间原样返回');
+check(sandbox.alFormatExecTime('') === '', '空值返回空串');
+check(sandbox.alFormatExecTime(null) === '', 'null 返回空串');
 
 // ---- HTML 转义 (T4/T5 安全) ----
 check(sandbox.alEscape('<img src=x onerror=alert(1)>') === '&lt;img src=x onerror=alert(1)&gt;', '[关键] 危险标签被转义');

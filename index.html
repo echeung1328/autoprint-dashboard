@@ -433,6 +433,14 @@
       <label for="alDays">有效期（天，1-365）</label>
       <input id="alDays" type="number" value="30" min="1" max="365" style="width:120px;">
     </div>
+    <div class="al-field">
+      <label for="alScope">数据范围</label>
+      <select id="alScope" style="min-width:130px;"><option value="ALL">🌐 全部站点</option></select>
+    </div>
+    <div class="al-field">
+      <label for="alRows">最近条数（1-365）</label>
+      <input id="alRows" type="number" value="7" min="1" max="365" style="width:110px;">
+    </div>
     <button class="al-btn al-btn-primary" onclick="createAccessLink()">➕ 创建链接</button>
   </div>
 
@@ -440,11 +448,11 @@
     <table class="al-table">
       <thead>
         <tr>
-          <th>标题</th><th>状态</th><th>有效期至</th><th>创建者</th><th>分享 URL</th><th>操作</th>
+          <th>标题</th><th>状态</th><th>数据范围</th><th>条数</th><th>有效期至</th><th>创建者</th><th>分享 URL</th><th>操作</th>
         </tr>
       </thead>
       <tbody id="alTableBody">
-        <tr><td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">加载中...</td></tr>
+        <tr><td colspan="8" style="text-align:center; padding:40px; color:#94a3b8;">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -456,6 +464,7 @@
     <h1>🖨️ AutoPrint 执行报告<span style="font-size:13px; opacity:.8; font-weight:400; margin-left:12px;">对外只读视图</span></h1>
     <div class="share-meta">
       <span>📄 <span id="shareTitle">--</span></span>
+      <span>🌐 数据范围 <span id="shareScope">全部站点</span></span>
       <span>⏳ 有效期至 <span id="shareExpiry">--</span></span>
       <span>🕐 生成于 <span id="shareGenerated">--</span></span>
     </div>
@@ -587,6 +596,34 @@ function alPerOrderSeconds(row) {
   var sec = (dur * 60) / ok;
   if (!Number.isFinite(sec)) return null;
   return Math.round(sec * 10) / 10;
+}
+
+// 条数钳制：非法→7；<1→1；>365→365（与后端 clampRowLimit 对齐，v2.3.0 #72）
+function alClampRows(v) {
+  var n = Number(v);
+  if (!Number.isFinite(n)) return 7;
+  n = Math.floor(n);
+  if (n < 1) return 1;
+  if (n > 365) return 365;
+  return n;
+}
+
+// 执行时间格式化为 UTC+8 中国时间，带星期几（v2.3.0 用户新增需求）
+// 输入 ISO 时间串（如 2026-11-26T01:30:00+00:00），输出「2026-11-26 09:30 周四」
+// 固定 +8 小时偏移计算，不依赖访客浏览器所在时区；解析失败时原样返回
+function alFormatExecTime(v) {
+  if (v == null || v === '') return '';
+  var s = String(v);
+  var d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  var t = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  var y = t.getUTCFullYear();
+  var mo = String(t.getUTCMonth() + 1).padStart(2, '0');
+  var da = String(t.getUTCDate()).padStart(2, '0');
+  var hh = String(t.getUTCHours()).padStart(2, '0');
+  var mi = String(t.getUTCMinutes()).padStart(2, '0');
+  var wd = ['日', '一', '二', '三', '四', '五', '六'][t.getUTCDay()];
+  return y + '-' + mo + '-' + da + ' ' + hh + ':' + mi + ' 周' + wd;
 }
 
 // 自带 HTML 转义（不依赖页面 escapeHtml，便于独立测试）
@@ -787,16 +824,32 @@ function showAccessLinks() {
   const sharePg = document.getElementById('sharePage'); if (sharePg) sharePg.style.display = 'none';
   document.getElementById('accessLinksPage').style.display = 'block';
   loadAccessLinks();
+  loadSiteOptions();
+}
+
+// 动态加载站点下拉选项（v2.3.0 #71），失败时保留「全部站点」默认项
+async function loadSiteOptions() {
+  const sel = document.getElementById('alScope');
+  if (!sel) return;
+  const body = await alAdminFetch('/admin/sites', { method: 'GET' });
+  if (!body || !Array.isArray(body.sites)) return;
+  const cur = sel.value || 'ALL';
+  let html = '<option value="ALL">🌐 全部站点</option>';
+  body.sites.forEach(function (s) {
+    html += '<option value="' + alEscape(s) + '">' + alEscape(s) + '</option>';
+  });
+  sel.innerHTML = html;
+  sel.value = cur;
 }
 
 async function loadAccessLinks() {
   const tbody = document.getElementById('alTableBody');
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">加载中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#94a3b8;">加载中...</td></tr>';
   const body = await alAdminFetch('/admin/list', { method: 'GET' });
-  if (!body) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#ef4444;">加载失败</td></tr>'; return; }
+  if (!body) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#ef4444;">加载失败</td></tr>'; return; }
   const links = Array.isArray(body.links) ? body.links : [];
   if (!links.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">暂无访问链接，请在上方创建</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#94a3b8;">暂无访问链接，请在上方创建</td></tr>';
     return;
   }
   const now = Date.now();
@@ -807,9 +860,13 @@ async function loadAccessLinks() {
     const fullUrl = base + alEscape(l.token);
     const creator = l.created_by_email || (l.created_by ? String(l.created_by).slice(0, 8) : '-');
     const canStop = l.status === 'active';
+    const scopeLabel = !l.site_scope || l.site_scope === 'ALL' ? '🌐 全部' : alEscape(l.site_scope);
+    const rowsLabel = l.row_limit == null ? '100(历史)' : alEscape(l.row_limit);
     return '<tr>' +
       '<td>' + alEscape(l.title) + '</td>' +
       '<td><span class="al-status ' + meta.cls + '">' + meta.label + '</span></td>' +
+      '<td>' + scopeLabel + '</td>' +
+      '<td>' + rowsLabel + '</td>' +
       '<td>' + alEscape(formatDate(l.expires_at)) + '</td>' +
       '<td>' + alEscape(creator) + '</td>' +
       '<td><span class="al-url" title="' + fullUrl + '">' + fullUrl + '</span>' +
@@ -823,14 +880,17 @@ async function loadAccessLinks() {
 async function createAccessLink() {
   const title = document.getElementById('alTitle').value.trim();
   const days = alClampDays(document.getElementById('alDays').value);
+  const siteScope = document.getElementById('alScope').value || 'ALL';
+  const rowLimit = alClampRows(document.getElementById('alRows').value);
   if (!title) { showToast('⚠️ 请填写链接标题', 'error'); return; }
   const body = await alAdminFetch('/admin/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: title, days: days })
+    body: JSON.stringify({ title: title, days: days, site_scope: siteScope, row_limit: rowLimit })
   });
   if (!body) return;
-  showToast('✅ 链接已创建（有效期 ' + days + ' 天）', 'success');
+  const scopeText = siteScope === 'ALL' ? '全部站点' : siteScope;
+  showToast('✅ 链接已创建（' + scopeText + ' · 最近 ' + rowLimit + ' 条 · 有效期 ' + days + ' 天）', 'success');
   document.getElementById('alTitle').value = '';
   loadAccessLinks();
   // 自动复制完整 URL，便于直接发送
@@ -897,6 +957,7 @@ async function loadSharePage(token) {
   const bodyEl = document.getElementById('shareBody');
   bodyEl.innerHTML = '<div class="loading">正在加载报表数据...</div>';
   document.getElementById('shareTitle').textContent = '--';
+  document.getElementById('shareScope').textContent = '全部站点';
   document.getElementById('shareExpiry').textContent = '--';
   document.getElementById('shareGenerated').textContent = '--';
 
@@ -912,9 +973,10 @@ async function loadSharePage(token) {
 
   const rows = Array.isArray(payload.data) ? payload.data : [];
   document.getElementById('shareTitle').textContent = payload.title || '对外报表';
+  document.getElementById('shareScope').textContent = !payload.site_scope || payload.site_scope === 'ALL' ? '全部站点' : payload.site_scope;
   document.getElementById('shareExpiry').textContent = formatDate(payload.expires_at);
   document.getElementById('shareGenerated').textContent = formatDate(payload.generated_at);
-  renderShareData(rows);
+  renderShareData(rows, payload.row_limit);
 }
 
 function renderShareError(status, errorMsg) {
@@ -924,15 +986,16 @@ function renderShareError(status, errorMsg) {
     '<h2>' + v.title + '</h2><p>' + v.detail + '</p></div>';
 }
 
-function renderShareData(rows) {
+function renderShareData(rows, rowLimit) {
   const k = alShareKpis(rows);
+  const limitText = Number.isFinite(Number(rowLimit)) ? Number(rowLimit) : k.count;
   let html = '<div class="share-kpi-row">' +
     '<div class="share-kpi k-total"><div class="k-label">总打印量</div><div class="k-value">' + k.total.toLocaleString() + '</div></div>' +
     '<div class="share-kpi k-success"><div class="k-label">成功</div><div class="k-value">' + k.success.toLocaleString() + '</div></div>' +
     '<div class="share-kpi k-fail"><div class="k-label">失败</div><div class="k-value">' + k.fail.toLocaleString() + '</div></div>' +
     '<div class="share-kpi k-duration"><div class="k-label">平均每次执行（分钟）</div><div class="k-value">' + k.avgDuration.toFixed(1) + '</div></div>' +
     '</div>';
-  html += '<div class="share-table-box"><h3>📋 执行明细（最近 ' + k.count + ' 条）</h3>';
+  html += '<div class="share-table-box"><h3>📋 执行明细（最近 ' + limitText + ' 条）</h3>';
   if (!rows.length) {
     html += '<p style="color:#94a3b8;font-size:13px;">暂无对外展示数据</p>';
   } else {
@@ -943,7 +1006,7 @@ function renderShareData(rows) {
       var perSec = alPerOrderSeconds(r);
       html += '<tr>' +
         '<td>' + alEscape(r['site']) + '</td>' +
-        '<td>' + alEscape(r['执行时间']) + '</td>' +
+        '<td>' + alEscape(alFormatExecTime(r['执行时间'])) + '</td>' +
         '<td>' + alEscape(r['总数']) + '</td>' +
         '<td>' + alEscape(r['成功']) + '</td>' +
         '<td>' + alEscape(r['跳过']) + '</td>' +
