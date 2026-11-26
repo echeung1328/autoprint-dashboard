@@ -1,8 +1,8 @@
 # AutoPrint 系统 - 部署运维手册 v1.0
 
-**文档版本**: V1.1\
+**文档版本**: V1.2\
 **创建日期**: 2026-06-30\
-**修订日期**: 2026-07-30\
+**修订日期**: 2026-11-26\
 **作者**: 高级开发工程师\
 **审核**: 待审核
 
@@ -15,6 +15,7 @@
   --------------- --------------- --------------- ----------------
   V1.0            2026-06-30      初始版本        高级开发工程师
   V1.1            2026-07-30      对齐实际部署策略：Netlify 改手动部署(自动发布关闭省额度)；新增 Vercel 后备平台(Ignored Build Step 仅构建 production)；明确 develop/master 分支模型；修正"自动部署(推荐)"为按需手动部署        高级开发工程师
+  V1.2            2026-11-26      新增第 2.3 节 CI/CD 链路全景(Netlify 手动/Vercel 自动/Cloudflare Worker 自动三链路)；新增第 2.4 节域名与 DNS 设置(5 域名归属 + DNS 层级 + UAT Worker 配置)；环境划分补 UAT 站；对齐三平台安全配置        高级开发工程师
 
   ----------------------------------------------------------------
 
@@ -24,6 +25,10 @@
 
 1.  概述
 2.  部署架构
+    2.1 架构图
+    2.2 环境划分
+    2.3 CI/CD 链路全景（v1.2 新增）
+    2.4 域名与 DNS 设置（v1.2 新增）
 3.  部署流程
 4.  环境变量配置
 5.  监控与告警
@@ -76,16 +81,113 @@ Action（仓库仅含 Supabase RLS 安全检查，非部署）；Netlify **手�
 ### 2.2 环境划分
 
   -------------------------------------------------------------------------------------
-  环境            用途            URL                                   分支            部署方式
-  --------------- --------------- ------------------------------------- --------------- -------------------------------
-  生产环境(主)    正式使用        https://autoprintreport.netlify.app   master          手动部署(自动发布关闭，发版时 Trigger deploy → Deploy without cache)
+  环境            用途            URL                                              分支            部署方式
+  --------------- --------------- -------------------------------------------------- --------------- -------------------------------
+  生产环境(主)    正式使用        https://autoprintreport.netlify.app               master          手动部署(自动发布关闭，发版时 Trigger deploy → Deploy without cache)
 
-  后备环境        Netlify 故障时   https://autoprint-dashboard.vercel.app master         生产分支推送即自动构建(Ignored Build Step 放行)
+  后备环境        Netlify 故障时   https://autoprint-dashboard.vercel.app            master          生产分支推送即自动构建(Ignored Build Step 放行)
 
-  开发环境        本地开发/记进度  http://127.0.0.1:5500                develop/feature/\* 不部署(零额度)；仅本地 Live Server 预览
+  UAT 测试环境    测试/对外分享    https://autoprintreport.comlanuat.de5.net          master          Cloudflare Worker，master 推送自动部署(非 Netlify)
+
+  开发环境        本地开发/记进度  http://127.0.0.1:5500                              develop/feature/\* 不部署(零额度)；仅本地 Live Server 预览
   -------------------------------------------------------------------------------------
 
 > **关键约定**：`develop` 分支**永不自动部署**（Netlify 已关 Branch Deploys/Deploy Previews，Vercel 的 Ignored Build Step 跳过非 production 分支）。日常改动都在 `develop` 上频繁 commit/push，不消耗任何平台额度；只有合并到 `master` 并手动触发后，线上才更新。
+
+### 2.3 CI/CD 链路全景（v1.2 新增）
+
+本项目**没有**"推代码即全站自动更新"的统一流水线，而是三条平台链路各有各的触发方式。理解这一点是避免"以为发版了其实没生效"的关键。
+
+**三链路对照表**
+
+| 平台 | 环境 | 触发条件 | 部署动作 | 构建产物 |
+|------|------|----------|----------|----------|
+| Netlify | 主生产 | **手动**（自动发布已关闭） | 仪表盘 Deploys → Trigger deploy → Deploy project without cache | `public/`（仅 index.html） |
+| Vercel | 后备 | master 推送**自动** | Ignored Build Step 仅放行 production，自动构建 | `public/`（仅 index.html） |
+| Cloudflare Worker | UAT | master 推送**自动** | Git 集成 → `npx wrangler deploy` | `public/`（仅 index.html） |
+
+**分支 → 部署映射**
+
+| 分支 | Netlify | Vercel | Cloudflare Worker |
+|------|---------|--------|-------------------|
+| `develop` / `feature/*` | ❌ 不部署（Branch Deploys 已关） | ❌ 跳过构建 | ❌ 不部署 |
+| `master` | ⚠️ 代码上去但**需手动 Trigger** 才生效 | ✅ 自动构建 | ✅ 自动部署 |
+
+> **一句话记忆**：develop 随便推不花钱；master 合并后——**Vercel 和 UAT 自动更新，Netlify 主站必须手动点一下**。
+
+**GitHub Actions 的角色（非部署）**
+
+仓库仅有一个工作流 `.github/workflows/rls-security-check.yml`：
+
+- **作用**：安全门禁——扫描 RLS 策略、检查明文凭证泄露（已针对公开的 `SUPABASE_ANON_KEY` 做精准放行，避免误报，见 CI run #45557702153）。
+- **不是**部署流水线：它不推送代码、不触发任何平台发版。
+- **触发时机**：push / PR 到受保护分支时运行，结果在仓库 Actions 页查看。
+
+**三平台安全配置对齐**（SEC-01/02 原则，三处一致）
+
+| 平台 | 发布目录白名单 | SPA 兜底 | 安全响应头 |
+|------|---------------|----------|-----------|
+| Netlify | `publish = "public"`（`netlify.toml`） | `/* → /index.html (200)` + 敏感路径强制 404 | CSP/HSTS 等（SEC-02） |
+| Vercel | `outputDirectory = "public"`（`vercel.json`） | 框架默认 SPA 回退 | 同 Netlify（`vercel.json` headers） |
+| Cloudflare Worker | `assets.directory = "./public"`（`wrangler.jsonc`） | `not_found_handling = "single-page-application"` | 由 Cloudflare 平台默认提供 |
+
+> **共同产物**：三平台构建命令均为 `rm -rf public && mkdir -p public && cp index.html public/index.html`——只把 index.html 放进 `public/`，确保 `.git/`、`docs/`、`supabase/`、源数据等**永不进入公网**。这是 2026-11-26 UAT 源码暴露事故（issue #67）后的统一加固基线。
+
+**发版动作速查**
+
+```bash
+# 1. 日常开发（不部署）
+git checkout develop
+git add . && git commit -m "feat(#N): 说明 ✅ 已在本地环境测试通过"
+git push                              # 仅推进度
+
+# 2. 发版（master）
+git checkout master && git merge develop
+git push origin master                # Vercel + UAT 自动部署
+# Netlify 主站还需手动：Deploys → Trigger deploy → Deploy without cache
+
+# 3. 验证（三处都要看）
+# Netlify: https://autoprintreport.netlify.app
+# Vercel:  https://autoprint-dashboard.vercel.app
+# UAT:     https://autoprintreport.comlanuat.de5.net/share/<token>
+```
+
+### 2.4 域名与 DNS 设置（v1.2 新增）
+
+**五个域名归属**
+
+| 域名 | 承载平台 | 用途 |
+|------|----------|------|
+| `autoprintreport.netlify.app` | Netlify | 主生产站 |
+| `comlantest.de5.net` | Netlify | Netlify 站点自定义主域名 |
+| `www.comlantest.de5.net` | Netlify | 重定向 |
+| `autoprintreport.comlantest.de5.net` | Netlify | 别名 |
+| `autoprintreport.comlanuat.de5.net` | **Cloudflare Worker** | UAT 测试站（分享链接/管理页） |
+
+> ⚠️ `comlanuat`（UAT）与 `comlantest`（测试）是两个分开注册的域名，走两条完全不同的托管链路。**comlanuat 不在 Netlify Domain management 里**。
+
+**DNS 层级**
+
+```
+DNSPod（注册商）
+   ├─ comlantest.de5.net → Netlify 托管
+   └─ comlanuat.de5.net  → NS 委派 Cloudflare（adi.ns / damian.ns.cloudflare.com）
+                              → Cloudflare DNS 一条 Worker 记录：
+                                 autoprintreport.comlanuat.de5.net → Worker「autoprint-dashboard」
+                                 代理状态：橙云 Proxied
+```
+
+**UAT Worker 关键配置**（详见 `wrangler.jsonc` + Cloudflare 后台 Builds）
+
+| 项 | 值 |
+|---|---|
+| 发布目录 | `./public`（白名单，防源码暴露） |
+| SPA 回退 | `not_found_handling = "single-page-application"` |
+| Build command | `rm -rf public && mkdir -p public && cp index.html public/index.html` |
+| Deploy command | `npx wrangler deploy` |
+| Production 分支 | `master` |
+
+> 背景：2026-11-26 UAT 分享链接 404 + 源码暴露，根因即上述配置缺失，补齐后一并解决（issue #67）。
 
 ------------------------------------------------------------------------
 
