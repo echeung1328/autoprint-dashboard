@@ -4,6 +4,7 @@
 // Routes:
 //   GET  /public?token=xxx          : 公开校验 token，返回对外数据（无需 JWT）
 //   GET  /admin/list                : 管理端列出链接（需 admin JWT）
+//   GET  /admin/sites               : 动态站点列表 SELECT DISTINCT site（需 admin JWT）
 //   POST /admin/create              : 创建链接（需 admin JWT）
 //   POST /admin/stop                : 停止访问（需 admin JWT）
 //   POST /admin/delete              : 硬删 + 审计（需 admin JWT）
@@ -107,8 +108,24 @@ async function listLinks(): Promise<any[]> {
 
 // 对外展示数据：7 字段白名单（site/执行时间/总数/成功/跳过/失败/耗时分钟），不含来源邮箱等内部字段
 // 耗时分钟 = 业务所称「每次执行（分钟）」，round 到 1 位小数后再对外返回
-async function publicReportData(): Promise<any> {
-  const r = await fetch(SUPABASE_URL + '/rest/v1/ReportAutoPrint?select=site,%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4,%E6%80%BB%E6%95%B0,%E6%88%90%E5%8A%9F,%E8%B7%B3%E8%BF%87,%E5%A4%B1%E8%B4%A5,%E8%80%97%E6%97%B6%E5%88%86%E9%92%9F&order=%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4.desc&limit=100', { headers: svcHeaders() });
+// v2.3.0 #71/#72：siteScope='ALL' 不过滤，否则按 site 精确过滤；rowLimit 服务端 clamp 1-365
+const REPORT_SELECT = 'select=site,%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4,%E6%80%BB%E6%95%B0,%E6%88%90%E5%8A%9F,%E8%B7%B3%E8%BF%87,%E5%A4%B1%E8%B4%A5,%E8%80%97%E6%97%B6%E5%88%86%E9%92%9F';
+const REPORT_ORDER = 'order=%E6%89%A7%E8%A1%8C%E6%97%B6%E9%97%B4.desc';
+
+function clampRowLimit(v: any): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 7;
+  const i = Math.floor(n);
+  if (i < 1) return 1;
+  if (i > 365) return 365;
+  return i;
+}
+
+async function publicReportData(siteScope: string, rowLimit: number): Promise<any> {
+  let url = SUPABASE_URL + '/rest/v1/ReportAutoPrint?' + REPORT_SELECT + '&' + REPORT_ORDER;
+  if (siteScope && siteScope !== 'ALL') url += '&site=eq.' + encodeURIComponent(siteScope);
+  url += '&limit=' + rowLimit;
+  const r = await fetch(url, { headers: svcHeaders() });
   if (!r.ok) throw new Error('publicReportData ' + r.status);
   const rows = await r.json();
   const safe = Array.isArray(rows) ? rows : [];
@@ -116,7 +133,20 @@ async function publicReportData(): Promise<any> {
     const v = Number(row['耗时分钟']);
     return Object.assign({}, row, { '耗时分钟': Number.isFinite(v) ? Math.round(v * 10) / 10 : null });
   });
-  return { rows: formatted, generated_at: new Date().toISOString() };
+  return { rows: formatted, generated_at: new Date().toISOString(), site_scope: siteScope, row_limit: rowLimit };
+}
+
+// 动态站点列表：从报表数据 DISTINCT site（service_role 读取，admin JWT 保护调用方）
+async function distinctSites(): Promise<string[]> {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/ReportAutoPrint?select=site&order=site.asc', { headers: svcHeaders() });
+  if (!r.ok) throw new Error('distinctSites ' + r.status);
+  const rows = await r.json();
+  const set = new Set<string>();
+  (Array.isArray(rows) ? rows : []).forEach((row: any) => {
+    const s = row && row.site;
+    if (typeof s === 'string' && s.trim()) set.add(s.trim());
+  });
+  return Array.from(set).sort();
 }
 
 // ---- admin JWT 鉴权 ----
@@ -153,12 +183,17 @@ async function handlePublic(url: URL): Promise<Response> {
   const row = await findLinkByToken(token);
   const v = validateLink(row);
   if (!v.ok) return forbidden(reasonMessage(v.reason));
-  const report = await publicReportData();
+  // 历史链接无这两列时回退 ALL/100（保持原有行为），新链接用其存储值
+  const siteScope = row.site_scope || 'ALL';
+  const rowLimit = clampRowLimit(row.row_limit == null ? 100 : row.row_limit);
+  const report = await publicReportData(siteScope, rowLimit);
   return ok({
     title: row.title,
     expires_at: row.expires_at,
     data: report.data || report.rows,
-    generated_at: report.generated_at
+    generated_at: report.generated_at,
+    site_scope: siteScope,
+    row_limit: rowLimit
   });
 }
 
@@ -167,11 +202,19 @@ async function handleAdminCreate(req: Request, userId: string): Promise<Response
   const title = String(body.title || '').trim();
   if (!title) return bad('缺少标题');
   const days = clampLifetimeDays(body.days);
+  // T3 数据隔离：site_scope 必须是 ALL 或合法站点（动态白名单校验，防注入）
+  let siteScope = String(body.site_scope || 'ALL').trim() || 'ALL';
+  if (siteScope !== 'ALL') {
+    const sites = await distinctSites();
+    if (sites.indexOf(siteScope) < 0) return bad('无效的数据范围（站点不在白名单内）');
+  }
+  // T4 最近 N 条：服务端 clamp 1-365
+  const rowLimit = clampRowLimit(body.row_limit == null ? 7 : body.row_limit);
   const token = generateToken();
   const expiresAt = computeExpiresAt(Date.now(), days);
-  const row = await insertLink({ token, title, status: 'active', expires_at: expiresAt, created_by: userId });
-  await insertAudit({ link_id: row ? row.id : null, token_prefix: tokenPrefix(token), action: 'create', performed_by: userId, detail: { title, days, expires_at: expiresAt } });
-  return ok({ id: row ? row.id : null, token, title, status: 'active', expires_at: expiresAt, url: PUBLIC_BASE + '/share/' + token });
+  const row = await insertLink({ token, title, status: 'active', expires_at: expiresAt, created_by: userId, site_scope: siteScope, row_limit: rowLimit });
+  await insertAudit({ link_id: row ? row.id : null, token_prefix: tokenPrefix(token), action: 'create', performed_by: userId, detail: { title, days, expires_at: expiresAt, site_scope: siteScope, row_limit: rowLimit } });
+  return ok({ id: row ? row.id : null, token, title, status: 'active', expires_at: expiresAt, site_scope: siteScope, row_limit: rowLimit, url: PUBLIC_BASE + '/share/' + token });
 }
 
 async function handleAdminStop(req: Request, userId: string): Promise<Response> {
@@ -210,6 +253,7 @@ Deno.serve(async (req) => {
       const auth = await requireAdmin(req);
       if (!auth.ok) return auth.resp;
       if (req.method === 'GET' && path.endsWith('/list')) return ok({ links: await listLinks() });
+      if (req.method === 'GET' && path.endsWith('/sites')) return ok({ sites: await distinctSites() });
       if (req.method === 'POST' && path.endsWith('/create')) return await handleAdminCreate(req, auth.userId);
       if (req.method === 'POST' && path.endsWith('/stop')) return await handleAdminStop(req, auth.userId);
       if (req.method === 'POST' && path.endsWith('/delete')) return await handleAdminDelete(req, auth.userId);

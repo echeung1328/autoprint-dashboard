@@ -64,7 +64,15 @@ function installFetch({ linkRow = activeRow, profile = adminProfile, jwtOk = tru
     if (u.includes('/rest/v1/profiles?')) return new Response(JSON.stringify(profile), { status: 200 });
     if (u.includes('/rest/v1/access_links?select=*&token=')) return new Response(JSON.stringify(linkRow ? [linkRow] : []), { status: 200 });
     if (u.includes('/rest/v1/access_links?select=*&order=')) return new Response(JSON.stringify([activeRow]), { status: 200 });
-    if (u.includes('/rest/v1/ReportAutoPrint?')) return new Response(JSON.stringify([{ site: '上海', 总数: 10, 成功: 9, 跳过: 1, 失败: 0, 耗时分钟: 13.0833333333333333 }]), { status: 200 });
+    // T3+T4：DISTINCT 站点端点返回站点列表；报表端点返回多站点样本，并记录 URL 供断言过滤/limit
+    if (u.includes('/rest/v1/ReportAutoPrint?select=site&')) return new Response(JSON.stringify([{ site: '上海' }, { site: '北京' }]), { status: 200 });
+    if (u.includes('/rest/v1/ReportAutoPrint?')) {
+      const scoped = u.includes('site=eq.');
+      const rows = scoped
+        ? [{ site: '上海', 总数: 10, 成功: 9, 跳过: 1, 失败: 0, 耗时分钟: 13.0833333333333333 }]
+        : [{ site: '上海', 总数: 10, 成功: 9, 跳过: 1, 失败: 0, 耗时分钟: 13.0833333333333333 }, { site: '北京', 总数: 20, 成功: 18, 跳过: 2, 失败: 0, 耗时分钟: 5 }];
+      return new Response(JSON.stringify(rows), { status: 200 });
+    }
     if (u.includes('/rest/v1/access_links_audit') && opts.method === 'POST') return new Response('[]', { status: 201 });
     if (u.includes('/rest/v1/access_links') && opts.method === 'POST') return new Response(JSON.stringify([{ ...activeRow, id: 99 }]), { status: 201 });
     if (u.includes('/rest/v1/access_links?id=eq.') && opts.method === 'PATCH') return new Response(null, { status: 204 });
@@ -161,6 +169,67 @@ log('[关键] delete 写审计', delCalls[0].body.action, 'delete');
 const auditIdx = calls.findIndex(c => c.u.includes('access_links_audit'));
 const deleteIdx = calls.findIndex(c => c.u.includes('access_links?id=eq.') && c.method === 'DELETE');
 log('[关键] 审计先于硬删', auditIdx < deleteIdx, true);
+
+// ---- T3+T4 数据隔离 + 最近 N 条 (v2.3.0 #71/#72) ----
+// T3: /admin/sites 动态站点列表 + admin 鉴权
+installFetch();
+r = await handler(req('https://x.supabase.co/admin/sites'));
+log('[T3] 无 JWT 访问 /admin/sites → 401', r.status, 401);
+installFetch();
+r = await handler(req('https://x.supabase.co/admin/sites', 'GET', null, true));
+j = await jsonOf(r);
+log('[T3] admin 取站点列表 → 200', r.status, 200);
+log('[T3] 站点列表含北京/上海', j.sites, ['上海', '北京']);
+
+// T4: create 接收 site_scope + row_limit，落库 + 审计
+installFetch();
+r = await handler(req('https://x.supabase.co/admin/create', 'POST', { title: '站点链接', days: 10, site_scope: '北京', row_limit: 7 }, true));
+j = await jsonOf(r);
+log('[T4] create 带 scope/limit → 200', r.status, 200);
+log('[T4] 返回 site_scope', j.site_scope, '北京');
+log('[T4] 返回 row_limit', j.row_limit, 7);
+const insertCall = calls.find(c => c.u.endsWith('/rest/v1/access_links') && c.method === 'POST');
+log('[T4] 落库含 site_scope', insertCall && insertCall.body.site_scope, '北京');
+log('[T4] 落库含 row_limit', insertCall && insertCall.body.row_limit, 7);
+const createAuditT3 = calls.find(c => c.u.includes('access_links_audit'));
+log('[T4] 审计 detail 记 scope', createAuditT3 && createAuditT3.body.detail.site_scope, '北京');
+log('[T4] 审计 detail 记 limit', createAuditT3 && createAuditT3.body.detail.row_limit, 7);
+
+// T3: 非法站点白名单校验
+installFetch();
+r = await handler(req('https://x.supabase.co/admin/create', 'POST', { title: '注入测试', days: 10, site_scope: '数据库注入' }, true));
+log('[T3] 非法站点被拒 → 400', r.status, 400);
+
+// T4: row_limit clamp 1-365
+installFetch();
+r = await handler(req('https://x.supabase.co/admin/create', 'POST', { title: '越界limit', days: 10, row_limit: 999 }, true));
+j = await jsonOf(r);
+log('[T4] row_limit=999 钳制为365', j.row_limit, 365);
+installFetch();
+r = await handler(req('https://x.supabase.co/admin/create', 'POST', { title: '越界limit', days: 10, row_limit: 0 }, true));
+j = await jsonOf(r);
+log('[T4] row_limit=0 钳制为1', j.row_limit, 1);
+
+// T4: /public 按链接 scope 过滤 + 动态 limit，并返回给前端
+installFetch({ linkRow: { ...activeRow, site_scope: '上海', row_limit: 5 } });
+r = await handler(req('https://x.supabase.co/public?token=' + TOKEN));
+j = await jsonOf(r);
+log('[T4] /public 返回 site_scope', j.site_scope, '上海');
+log('[T4] /public 返回 row_limit', j.row_limit, 5);
+const reportCall2 = calls.find(c => c.u.includes('/rest/v1/ReportAutoPrint?select=site,'));
+log('[T3] 报表 URL 含 site=eq.上海', reportCall2 && reportCall2.u.includes('site=eq.' + encodeURIComponent('上海')), true);
+log('[T4] 报表 URL 含 limit=5', reportCall2 && reportCall2.u.includes('limit=5'), true);
+log('[T3] 过滤后仅返回该站点数据', j.data.length, 1);
+
+// 历史链接无 scope/limit 列 → 回退 ALL/100
+installFetch({ linkRow: { ...activeRow } });
+r = await handler(req('https://x.supabase.co/public?token=' + TOKEN));
+j = await jsonOf(r);
+log('[兼容] 历史链接回退 site_scope=ALL', j.site_scope, 'ALL');
+log('[兼容] 历史链接回退 row_limit=100', j.row_limit, 100);
+const reportCall3 = calls.find(c => c.u.includes('/rest/v1/ReportAutoPrint?select=site,'));
+log('[兼容] 历史链接报表 URL 无 site 过滤', reportCall3 && reportCall3.u.includes('site=eq.'), false);
+log('[兼容] 历史链接报表 URL limit=100', reportCall3 && reportCall3.u.includes('limit=100'), true);
 
 console.log(`\n结果: ${pass} PASS / ${fail} FAIL`);
 if (fail > 0) process.exit(1);
