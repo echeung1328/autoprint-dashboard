@@ -1,14 +1,17 @@
-# AutoPrint 免登录访问链接（access_links）部署与管理手册 v1.0
+# AutoPrint 免登录访问链接（access_links）部署与管理手册 v1.1
 
-**文档版本**：v1.0
+**文档版本**：v1.1
 **创建日期**：2026-11-26
+**更新日期**：2026-11-26（v2.3.0 数据隔离 / 最近 N 条 / UTC+8 / 数字格式化）
 **作者**：WorkBuddy
 **模型**：Tencent Hunyuan Hy
-**关联**：Epic #45 / T8 #53（本手册即 T8 交付物）· T1 #46 · T2 #47 · T3 #48 · T6 #51 · T7 #52
+**关联**：Epic #45 / T8 #53（本手册即 T8 交付物）· T1 #46 · T2 #47 · T3 #48 · T6 #51 · T7 #52 · Epic #69（v2.3.0 优化：T2 #70 / T3 #71 / T4 #72 / T5 #73）
 **适用项目**：Supabase `uvqjtvonxwsmhntnyest` · 生产站 `https://autoprintreport.netlify.app` · UAT 站 `https://autoprintreport.comlanuat.de5.net`
 
 > 面向对象：管理员 / 运维人员。本文说明「这套免登录分享链接怎么部署、怎么在管理页创建/停止/删除、出问题怎么排查」。
 > **零明文密钥承诺**：本文所有密钥仅以 `<占位符>` 出现，真实值只存在于本地 `SECRETS_LOCAL.md` 与 Supabase 控制台。
+
+> **v1.1 变更摘要（v2.3.0，commit `773cf8d`）**：新增数据隔离（`site_scope`=ALL/具体站点）、最近 N 条（`row_limit` 1-365，默认 7）、执行时间固定 UTC+8 带星期、每报销单平均耗时（秒）列、数字整数化+右对齐+总数数据条。Edge Function 重新部署（version 3）。测试从 101→156 项全绿。详见第 8 节。
 
 ---
 
@@ -59,10 +62,11 @@
 | 组件 | 文件 / 位置 | 作用 | 当前状态 |
 |---|---|---|---|
 | 数据库表 + RLS | `supabase/migrations/20261125_access_links_T1.sql` | 主表 `access_links` + 审计表 `access_links_audit` | ✅ 已执行（2026-11-25） |
-| Edge Function | `supabase/functions/access_links/index.ts` | 公开校验 + 管理端 CRUD | ✅ 已部署（生产 version 2，verify_jwt=false） |
+| 数据库 migration（v2.3.0） | `supabase/migrations/20261126_access_links_T3_T4.sql` | 加 `site_scope`/`row_limit` 两列 + CHECK 约束，历史回填 ALL/100 | ✅ 已执行（2026-11-26） |
+| Edge Function | `supabase/functions/access_links/index.ts` | 公开校验 + 管理端 CRUD + 数据隔离/条数过滤 + `/admin/sites` | ✅ 已部署（生产 version 3，verify_jwt=false） |
 | token 逻辑 | `supabase/functions/access_links/access_token.mjs` | token 生成/校验/有效期钳制 | ✅ 随函数部署 |
-| 前端页面 | `index.html`（路由 + 样式 + 逻辑） | 分享页 + 管理页 | ✅ 已上线（v2.2.0） |
-| 测试 | `*.test.mjs` × 3 | 28 + 29 + 44 = 101 项全绿 | ✅ 本地可复跑 |
+| 前端页面 | `index.html`（路由 + 样式 + 逻辑） | 分享页 + 管理页（v2.3.0 数字格式化） | ✅ 已上线（v2.3.0，commit `773cf8d`） |
+| 测试 | `*.test.mjs` × 3 | 28 + 51 + 77 = 156 项全绿 | ✅ 本地可复跑 |
 
 > 三平台分工（详见《部署运维手册 V1.2》2.3）：Netlify = 生产主站（手动部署）；Vercel = 后备；Cloudflare Worker = UAT 站（分享/管理页测试）。分享页 SPA fallback 已三平台对齐（#67）。
 
@@ -113,7 +117,7 @@ cd D:\WBStorage\Projects\AutoPrint
 supabase functions deploy access_links --project-ref uvqjtvonxwsmhntnyest --no-verify-jwt --use-api
 ```
 
-预期回显：`Deployed access_links`（或版本递增）。生产上当前为 version 2。
+预期回显：`Deployed access_links`（或版本递增）。生产上当前为 **version 3**（v2.3.0 于 2026-11-26 重新部署）。
 
 > 若改了 `index.ts` 需重新部署覆盖（无停机）；若只改 `access_token.mjs`，同样需重新部署（它是函数的 import 依赖）。
 
@@ -288,6 +292,32 @@ LIMIT 50;
 
 ## 8. 变更与回滚
 
+### 8.1 版本变更记录
+
+| 版本 | 日期 | 主要变更 | commit |
+|---|---|---|---|
+| v2.2.0 | 2026-11-25 | access_links 首次上线：公开校验 + 管理端 CRUD + 审计 + 分享页/管理页 | `f748cea` |
+| **v2.3.0** | **2026-11-26** | **数据隔离（site_scope）、最近 N 条（row_limit 1-365）、执行时间 UTC+8 带星期、每报销单平均耗时（秒）列、数字整数化+右对齐+总数数据条、Edge Function ver 3（+`/admin/sites`）、migration T3_T4** | **`773cf8d`** |
+
+### 8.2 v2.3.0 变更详情
+
+**数据库（migration `20261126_access_links_T3_T4.sql`）**
+- `access_links` 新增 `site_scope text NOT NULL DEFAULT 'ALL'`、`row_limit int NOT NULL DEFAULT 7` + CHECK（`row_limit BETWEEN 1 AND 365`）。
+- 历史链接回填 `site_scope='ALL'`、`row_limit=100`（保持 v2.2.0 展示 100 条的原有行为）。
+- 回滚：需谨慎，两列有 NOT NULL + DEFAULT；新增列不影响旧数据读取，一般不回滚 schema，只回退前后端代码。
+
+**后端 Edge Function（version 3）**
+- `/public`：按 `site_scope` 过滤（`ALL` 不过滤，否则 `site=eq.<站点>`），`limit` 用 `row_limit`；响应新增 `site_scope`/`row_limit` 字段。
+- 新增 `GET /admin/sites`：从报表 `DISTINCT site` 动态返回站点列表（admin JWT 保护）。
+- `/admin/create`：body 新增 `site_scope`（白名单校验防注入）与 `row_limit`（服务端 clamp 1-365）。
+
+**前端（`index.html`）**
+- 管理页：创建表单加「数据范围」下拉（动态站点）+「最近条数」输入（默认 7，1-365）；列表加「数据范围/条数」两列。
+- 分享页：头部显示数据范围、标题联动「最近 N 条」；执行时间固定 UTC+8 带星期；新增「每报销单平均耗时（秒）」列。
+- Prototype 格式化：数字四舍五入整数（含 KPI）、6 个数字列右对齐 + tabular-nums、总数列 Excel 式数据条（品牌主蓝 #002FA7 16% 透明，不新增颜色）。
+
+### 8.3 回滚操作
+
 | 变更类型 | 做法 |
 |---|---|
 | 逻辑改动（白名单/鉴权/审计） | 改 `index.ts` → 重跑测试 → `supabase functions deploy access_links --no-verify-jwt --use-api` 覆盖（无停机） |
@@ -305,20 +335,21 @@ LIMIT 50;
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| GET | `/functions/v1/access_links/public?token=<token>` | 无（按 token） | 公开校验并返回 7 字段报表数据 |
-| GET | `/functions/v1/access_links/admin/list` | admin JWT | 列出所有链接 |
-| POST | `/functions/v1/access_links/admin/create` | admin JWT | body: `{title, days}` → 返回 token + 分享 URL |
+| GET | `/functions/v1/access_links/public?token=<token>` | 无（按 token） | 公开校验并返回报表数据（响应含 `site_scope`/`row_limit`） |
+| GET | `/functions/v1/access_links/admin/list` | admin JWT | 列出所有链接（含 `site_scope`/`row_limit`） |
+| GET | `/functions/v1/access_links/admin/sites` | admin JWT | v2.3.0 新增：动态站点列表（DISTINCT site） |
+| POST | `/functions/v1/access_links/admin/create` | admin JWT | body: `{title, days, site_scope, row_limit}` → 返回 token + 分享 URL |
 | POST | `/functions/v1/access_links/admin/stop` | admin JWT | body: `{token}` |
 | POST | `/functions/v1/access_links/admin/delete` | admin JWT | body: `{token}`（先审计后硬删） |
 
 ### 9.2 验收命令速查
 
 ```powershell
-# 本地 101 项测试
+# 本地 156 项测试（v2.3.0）
 cd supabase/functions/access_links
 node access_token.test.mjs   # 期望 28 PASS
-node integration.test.mjs    # 期望 29 PASS
-node ui_logic.test.mjs       # 期望 44/44 passed
+node integration.test.mjs    # 期望 51 PASS
+node ui_logic.test.mjs       # 期望 77/77 passed
 
 # 线上端点冒烟
 curl -s -o NUL -w "%{http_code}" "https://uvqjtvonxwsmhntnyest.supabase.co/functions/v1/access_links/public"                 # 403
@@ -333,7 +364,8 @@ curl -s -o NUL -w "%{http_code}" "https://autoprintreport.netlify.app/share/test
 | T4/T5 第2批测试记录（端到端 9 用例 + 7 截图） | `docs/AutoPrint_access_links第2批_测试记录_v1.0_Hunyuan-Hy.md` |
 | 部署与 CI/CD、域名设置 | 《部署运维手册 V1.2》2.3 / 2.4 |
 | UAT 404 与源码暴露修复 | issue #67 |
+| v2.3.0 优化（隔离/条数/UTC8/格式化） | Epic #69 · T2 #70 / T3 #71 / T4 #72 / T5 #73 |
 
 ---
 
-**文档结束** · 本手册为 T8 #53 交付物，完成后请由项目负责人确认并关闭 #53 与 Epic #45。
+**文档结束** · 本手册为 T8 #53 交付物（v1.1 同步 v2.3.0 变更）；#53 与 Epic #45 已于 2026-11-26 关闭。

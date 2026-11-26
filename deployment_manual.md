@@ -16,6 +16,7 @@
   V1.0            2026-06-30      初始版本        高级开发工程师
   V1.1            2026-07-30      对齐实际部署策略：Netlify 改手动部署(自动发布关闭省额度)；新增 Vercel 后备平台(Ignored Build Step 仅构建 production)；明确 develop/master 分支模型；修正"自动部署(推荐)"为按需手动部署        高级开发工程师
   V1.2            2026-11-26      新增第 2.3 节 CI/CD 链路全景(Netlify 手动/Vercel 自动/Cloudflare Worker 自动三链路)；新增第 2.4 节域名与 DNS 设置(5 域名归属 + DNS 层级 + UAT Worker 配置)；环境划分补 UAT 站；对齐三平台安全配置；新增第 10 节专项手册索引(引用 access_links 部署与管理手册)        高级开发工程师
+  V1.2.1          2026-11-26      v2.3.0 发版链路核实：master push 后 Netlify 与 Cloudflare Worker 两站均自动部署新代码(commit 773cf8d)，/share 深链 200；access_links Edge Function 重新部署 ver 3；第 10 节手册索引同步 v1.1(含数据隔离/最近 N 条/UTC8/格式化变更)        高级开发工程师
 
   ----------------------------------------------------------------
 
@@ -297,10 +298,10 @@ https://autoprint-dashboard.vercel.app 即可（master 推送已自动同步）�
 
 免登录访问链接（对外分享）系统的 Edge Function `access_links`、其 DB 迁移与 Secrets 配置，因内容独立且面向管理员运维，已成文专项手册：
 
-> 📘 **《AutoPrint 免登录访问链接（access_links）部署与管理手册 v1.0》**
+> 📘 **《AutoPrint 免登录访问链接（access_links）部署与管理手册 v1.1》**（v2.3.0 已同步）
 > 仓库路径：`docs/AutoPrint_access_links部署与管理手册_v1.0_Hunyuan-Hy.md`
 > 资料库权威版：https://www.workbuddy.cn/space/d/zKcgtlkV0o06ElzCgopZy4
-> 覆盖：DB 迁移 / Secrets（PROJECT_ 前缀）/ 函数部署（`--no-verify-jwt`）/ 管理页创建·停止·删除 / 访客端状态 / 故障排查。
+> 覆盖：DB 迁移 / Secrets（PROJECT_ 前缀）/ 函数部署（`--no-verify-jwt`）/ 管理页创建·停止·删除 / 访客端状态 / 故障排查；v1.1 新增数据隔离（site_scope）/ 最近 N 条（row_limit）/ UTC+8 / 每单耗时列 / 数字格式化变更记录。
 
 ------------------------------------------------------------------------
 
@@ -667,7 +668,7 @@ https://autoprint-dashboard.vercel.app 确认已同步
 
 | 专项手册 | 适用场景 | 仓库路径 | 资料库权威版 |
 |---|---|---|---|
-| 免登录访问链接（access_links）部署与管理手册 v1.0 | 分享链接/管理页的部署、创建·停止·删除、访客端状态、故障排查 | `docs/AutoPrint_access_links部署与管理手册_v1.0_Hunyuan-Hy.md` | https://www.workbuddy.cn/space/d/zKcgtlkV0o06ElzCgopZy4 |
+| 免登录访问链接（access_links）部署与管理手册 v1.1 | 分享链接/管理页的部署、创建·停止·删除、访客端状态、故障排查（含 v2.3.0 数据隔离/条数/UTC8/格式化） | `docs/AutoPrint_access_links部署与管理手册_v1.0_Hunyuan-Hy.md` | https://www.workbuddy.cn/space/d/zKcgtlkV0o06ElzCgopZy4 |
 | 版本发布 SOP v1.2 | 发版登记、版本号语义、app_versions 登记 | `docs/AutoPrint_版本发布SOP_v1.0.md` | https://www.workbuddy.cn/space/d/2nbHi0lc2V80qyS0j1GNS6 |
 | 回滚保险操作清单 v1.0 | 变更前的回滚保险与应急操作 | — | https://www.workbuddy.cn/space/d/rZyDdLdZwY1vGCq04F0IaW |
 | 邮件摄取（email_ingest）SOP 操作手册 v1.0 | 邮件→Webhook→Supabase 摄取链路运维 | `docs/email_ingest_SOP操作手册_v1.0.md` | — |
