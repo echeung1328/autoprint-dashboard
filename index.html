@@ -575,6 +575,20 @@ function alShareKpis(rows) {
   return { total: total, success: success, skipped: skipped, fail: fail, avgDuration: avgDur, count: arr.length };
 }
 
+// 每报销单平均耗时（秒）= 耗时分钟 × 60 ÷ 成功（v2.3.0 #70）
+// 成功<=0 或任一字段非有限数字时返回 null（展示层显示「—」，避免除零 / NaN / Infinity）
+function alPerOrderSeconds(row) {
+  if (!row) return null;
+  var rawDur = row['耗时分钟'], rawOk = row['成功'];
+  if (rawDur == null || rawDur === '' || rawOk == null || rawOk === '') return null;
+  var dur = Number(rawDur);
+  var ok = Number(rawOk);
+  if (!Number.isFinite(dur) || !Number.isFinite(ok) || ok <= 0 || dur < 0) return null;
+  var sec = (dur * 60) / ok;
+  if (!Number.isFinite(sec)) return null;
+  return Math.round(sec * 10) / 10;
+}
+
 // 自带 HTML 转义（不依赖页面 escapeHtml，便于独立测试）
 function alEscape(str) {
   return String(str == null ? '' : str).replace(/[&<>"']/g, function (c) {
@@ -923,9 +937,10 @@ function renderShareData(rows) {
     html += '<p style="color:#94a3b8;font-size:13px;">暂无对外展示数据</p>';
   } else {
     html += '<table class="share-table"><thead><tr>' +
-      '<th>站点</th><th>执行时间</th><th>总数</th><th>成功</th><th>跳过</th><th>失败</th><th>每次执行（分钟）</th>' +
+      '<th>站点</th><th>执行时间</th><th>总数</th><th>成功</th><th>跳过</th><th>失败</th><th>每次执行（分钟）</th><th>每报销单平均耗时（秒）</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
+      var perSec = alPerOrderSeconds(r);
       html += '<tr>' +
         '<td>' + alEscape(r['site']) + '</td>' +
         '<td>' + alEscape(r['执行时间']) + '</td>' +
@@ -934,6 +949,7 @@ function renderShareData(rows) {
         '<td>' + alEscape(r['跳过']) + '</td>' +
         '<td>' + alEscape(r['失败']) + '</td>' +
         '<td>' + alEscape(r['耗时分钟']) + '</td>' +
+        '<td>' + (perSec == null ? '—' : alEscape(perSec)) + '</td>' +
         '</tr>';
     });
     html += '</tbody></table>';

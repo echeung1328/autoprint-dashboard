@@ -20,7 +20,7 @@ const pureSrc = match[1];
 let sandbox;
 try {
   // 用函数构造器把纯逻辑块注入局部作用域并返回被测函数
-  sandbox = new Function(pureSrc + '\nreturn { alParseShareToken, alIsAdminLinksPath, alClampDays, alLinkStatus, AL_STATUS_META, alShareErrorView, alShareKpis, alEscape };')();
+  sandbox = new Function(pureSrc + '\nreturn { alParseShareToken, alIsAdminLinksPath, alClampDays, alLinkStatus, AL_STATUS_META, alShareErrorView, alShareKpis, alPerOrderSeconds, alEscape };')();
 } catch (e) {
   console.error('FAIL — 纯逻辑块求值失败: ' + e.message);
   process.exit(1);
@@ -95,6 +95,20 @@ const kEmpty = sandbox.alShareKpis([]);
 check(kEmpty.total === 0 && kEmpty.avgDuration === 0 && kEmpty.count === 0, '空数据不崩且归零');
 const kNull = sandbox.alShareKpis([{ '总数': null, '耗时分钟': 'abc' }]);
 check(kNull.total === 0 && kNull.avgDuration === 0, '脏数据（null/非数字）安全归零');
+
+// ---- 每报销单平均耗时（秒）(v2.3.0 #70) ----
+const pos = sandbox.alPerOrderSeconds({ '耗时分钟': 58.5, '成功': 128 });
+check(pos === 27.4, '[关键] 58.5分/128单 = 27.4秒（×60÷成功，round 1位）', pos);
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 12, '成功': 18 }) === 40, '12分/18单 = 40秒（整除）', sandbox.alPerOrderSeconds({ '耗时分钟': 12, '成功': 18 }));
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 13.08, '成功': 8 }) === 98.1, '13.08分/8单 = 98.1秒', sandbox.alPerOrderSeconds({ '耗时分钟': 13.08, '成功': 8 }));
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 10, '成功': 0 }) === null, '[关键] 成功=0 返回 null（防除零）');
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 10, '成功': -3 }) === null, '成功为负返回 null');
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 10, '成功': 'abc' }) === null, '成功非数字返回 null');
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 'abc', '成功': 10 }) === null, '耗时非数字返回 null');
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 10 }) === null, '缺成功字段返回 null');
+check(sandbox.alPerOrderSeconds(null) === null, '空行返回 null');
+check(sandbox.alPerOrderSeconds({ '耗时分钟': null, '成功': 5 }) === null, '耗时 null 返回 null');
+check(sandbox.alPerOrderSeconds({ '耗时分钟': 1, '成功': 3 }) === 20, '1分/3单 = 20秒（除不尽 round）', sandbox.alPerOrderSeconds({ '耗时分钟': 1, '成功': 3 }));
 
 // ---- HTML 转义 (T4/T5 安全) ----
 check(sandbox.alEscape('<img src=x onerror=alert(1)>') === '&lt;img src=x onerror=alert(1)&gt;', '[关键] 危险标签被转义');
