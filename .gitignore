@@ -24,6 +24,9 @@ build/
 out/
 public/
 
+# 测试结果生成物（CI 每次重生成，不入库；issue #66）
+test-results/
+
 # 环境变量
 .env
 .env.local

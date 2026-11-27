@@ -1,0 +1,62 @@
+# AutoPrint 统一测试结果报告 (issue #66, Sprint 6)
+#
+# 每次 PR / develop·master 推送时运行全部自动化测试套件，
+# 用 dorny/test-reporter 在 Checks/PR 逐用例显示结果（含失败用例定位）。
+#
+# 安全约束（沿用 SEC-13/14/15）：
+#   - permissions 最小化：contents:read + checks:write（报告需要写 Checks）
+#   - actions 固定 major 版本；checkout 不持久化凭据
+#   - 不注入任何 secrets；测试全部为本地 mock，零网络依赖
+
+name: Test Results
+
+on:
+  pull_request:
+    branches: [ master, main, develop ]
+  push:
+    branches: [ master, main, develop ]
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  unit-and-integration:
+    name: Node test suites
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 运行统一测试入口（9 套件 / 311 项）
+        run: node scripts/run-all-tests.mjs
+
+      - name: 汇总用例数写入 Job Summary
+        if: always()
+        run: |
+          if [ -f test-results/summary.json ]; then
+            echo "### AutoPrint 测试结果" >> $GITHUB_STEP_SUMMARY
+            node -e "const d=require('./test-results/summary.json'); const t=d.totals; console.log('- 套件: '+t.suites+' | 用例: '+t.tests+' | PASS: '+t.passed+' | FAIL: '+t.failed+' | 耗时: '+t.durationMs+'ms')" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "逐用例明细见下方 Checks（test-reporter）。" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 发布 JUnit 测试报告到 Checks
+        uses: dorny/test-reporter@v2
+        if: always()
+        with:
+          name: AutoPrint Test Report
+          path: test-results/junit.xml
+          reporter: java-junit
+          fail-on-error: true
+          list-suites: all
+          list-tests: failed
+          max-annotations: 50

@@ -1,8 +1,8 @@
-# AutoPrint 系统 - 贡献指南 v1.1
+# AutoPrint 系统 - 贡献指南 v1.2
 
-**文档版本**: V1.1  
+**文档版本**: V1.2  
 **创建日期**: 2026-06-30  
-**最后更新**: 2026-11-25  
+**最后更新**: 2026-11-27  
 **作者**: 高级开发工程师  
 **审核**: 待审核  
 
@@ -14,6 +14,7 @@
 |------|------|----------|------|
 | V1.0 | 2026-06-30 | 初始版本 | 高级开发工程师 |
 | V1.1 | 2026-11-25 | 第 7 节「测试规范」迭代：对齐项目实际 node 测试体系；新增测试记录透明性要求（关键用例依据+截图索引）、人工测试标注、GitHub 测试记录方式 | 高级开发工程师 |
+| V1.2 | 2026-11-27 | 第 7.6/7.8 节：统一测试入口 `scripts/run-all-tests.mjs`（9 套件 / 311 项）+ JUnit XML + GitHub Actions Checks 报告（issue #66）；纠正历史用例数口径（107/155/156 → 311） | 高级开发工程师 |
 
 ---
 
@@ -520,7 +521,7 @@ process.exit(failed === 0 ? 0 : 1);
 | 单一可追溯来源 | 仓库 `docs/` 测试记录文档 | 7.3 四板块，逐用例可标注、可版本化 |
 | 团队回顾入口 | 功能 Issue 的**结构化验证报告评论** | 标题 + 分路径小节 + 证据表 + 截图；每条路径对应测试用例，可 `@` 负责人讨论 |
 | 细粒度追踪 | 测试记录文档的依据表 + Issue 评论 | 单个用例的补测/转人工在「依据/备注」列标注 `⚠️ 需人工补测`，并在 Issue 留评论留痕 |
-| 自动化结果可视化（进阶，本期未启用） | GitHub Actions + JUnit | 测试脚本产出 JUnit XML，用 `dorny/test-reporter` 在 Checks/PR 显示逐用例结果；因本期「脚本不动」暂不启用，见 7.7 改进路线 |
+| 自动化结果可视化（✅ v1.2 已启用，issue #66） | 统一入口 + GitHub Actions + JUnit | `node scripts/run-all-tests.mjs` 一键跑全部套件并产出 `test-results/junit.xml` + `summary.json`；`.github/workflows/test-results.yml` 用 `dorny/test-reporter` 在 Checks/PR 逐用例显示。当前 **9 套件 / 311 项全绿**（此前 156 项口径只算了 access_links 3 套件，已纠正） |
 
 ### 7.7 手动测试检查清单（基线）
 
@@ -541,10 +542,27 @@ process.exit(failed === 0 ? 0 : 1);
 - [ ] 图表渲染时间 < 1 秒
 - [ ] 无明显卡顿
 
-### 7.8 改进路线（后续迭代）
+### 7.8 统一测试入口（v1.2 / issue #66，已交付）
 
-- 统一测试入口脚本：一键运行全部套件并把结果落盘为结构化文件（JSON / Markdown），让「107 项全绿」可机器复核；
-- 测试脚本产出 JUnit XML，接入 GitHub Actions 测试报告，在 PR/Checks 逐用例显示；
+```bash
+# 一键运行全部 9 个测试套件（约 1.3 秒），产出结构化结果
+node scripts/run-all-tests.mjs
+
+# 仅列出套件 / 仅跑某类套件 / dry-run 不写文件
+node scripts/run-all-tests.mjs --list
+node scripts/run-all-tests.mjs --filter access_links
+node scripts/run-all-tests.mjs --no-write
+```
+
+- 产物：`test-results/junit.xml`（逐用例 JUnit，含名称/状态/耗时/失败详情）+ `test-results/summary.json`（机器可读汇总）。`test-results/` 已加入 `.gitignore`，CI 每次重新生成。
+- 用例数口径：**9 套件 / 311 项**（access_links 156 + email_inbox_poc 107 + promote_approval 48）。历史文档中的 107/155/156 均为部分套件口径，以统一入口输出为准。
+- CI：`.github/workflows/test-results.yml` 在 PR 与 develop/master 推送时运行，`checks: write` 最小权限，失败用例在 Checks 内联标注；Job Summary 显示套件/用例/通过/失败汇总。
+- 兼容现存 4 种输出风格（`PASS label` / `PASS — desc` / `PASS name` / `N/N PASS`），新增套件沿用 `check()` 风格即可自动纳入。
+
+### 7.9 改进路线（后续迭代）
+
+- ~~统一测试入口脚本~~ ✅ 已完成（7.8）
+- ~~JUnit XML + Actions 报告~~ ✅ 已完成（7.8）
 - 关键用例（安全闸 / fail-safe）补 `test-case` Issue 模板，实现 Issue 级别的用例跟踪。
 
 ---
