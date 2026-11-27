@@ -1,14 +1,10 @@
 // integration.test.mjs — access_links Edge Function 集成测试 (issue #45 T2/T3/T6)
 // 运行：node integration.test.mjs
-// 方式：esbuild 编译 index.ts 为可 import 的模块，mock fetch + Deno.serve 捕获路由。
-// 按贡献指南 §7 V1.1：关键用例标注；输入/预期/实际可见；无法自动化的见测试记录「需人工测试」清单。
+// 方式：Node 22 原生 TypeScript 剥离直接 import index.ts（零额外依赖），mock fetch + Deno.serve 捕获路由。
+// 按贡献指南 §7 V1.3：关键用例标注；输入/预期/实际可见；无法自动化的见测试记录「需人工测试」清单。
 
-import { createRequire } from 'node:module';
-import { writeFileSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 let pass = 0, fail = 0;
 const log = (label, actual, expected) => {
@@ -17,35 +13,19 @@ const log = (label, actual, expected) => {
   else { fail++; console.log(`  FAIL ${label} | 预期=${JSON.stringify(expected)} 实际=${JSON.stringify(actual)}`); }
 };
 
-// esbuild 解析：与 promote_approval/integration.test.mjs 同款做法（不新增依赖）
-let esbuild;
-try {
-  esbuild = createRequire(import.meta.url)('esbuild');
-} catch (_) {
-  try {
-    esbuild = createRequire(process.env.ESBUILD_REQUIRE_BASE || 'C:/Users/Eric Zhang/.workbuddy/binaries/node/workspace/package.json')('esbuild');
-  } catch (e) {
-    console.error('SKIP — esbuild not found.');
-    process.exit(0);
-  }
-}
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ---- 编译 index.ts 为 ESM（把 Deno.serve 替换为捕获函数）----
-const SRC = join(__dirname, 'index.ts');
-const result = esbuild.buildSync({ entryPoints: [SRC], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', write: false });
-let code = result.outputFiles[0].text;
-// 把 Deno.serve(...) 调用替换为导出 handler
-code = code.replace(/Deno\.serve\(async \((req)\) => \{/, 'const __handler = async ($1) => {');
-// 移除文件末尾的 }); 收尾（Deno.serve 的调用括号）
-code = code.replace(/\}\);\s*$/, '};\nexport { __handler as handler };\n');
-// mock Deno 环境
-code = 'const Deno = { env: { get: (k) => ({ SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "svc", SUPABASE_ANON_KEY: "anon", PROJECT_PUBLIC_BASE: "https://site" })[k] || "" }, serve: () => {} };\n' + code;
-
-const dir = mkdtempSync(join(tmpdir(), 'al-test-'));
-const modPath = join(dir, 'mod.mjs');
-writeFileSync(modPath, code);
-const { handler } = await import(pathToFileURL(modPath).href);
+// ---- mock Deno：Node 22 原生剥离 TS，直接 import 源码，serve 回调即 handler ----
+const ENV = {
+  SUPABASE_URL: 'https://x.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'svc',
+  SUPABASE_ANON_KEY: 'anon',
+  PROJECT_PUBLIC_BASE: 'https://site'
+};
+let handler = null;
+globalThis.Deno = { env: { get: (k) => ENV[k] || '' }, serve: (h) => { handler = h; } };
+await import(pathToFileURL(join(__dirname, 'index.ts')).href);
+if (!handler) { console.error('FAIL — Deno.serve handler not captured'); process.exit(1); }
 
 const NOW = Date.parse('2026-11-25T00:00:00Z');
 const TOKEN = 'A'.repeat(43);

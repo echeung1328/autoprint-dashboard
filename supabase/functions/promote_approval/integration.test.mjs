@@ -1,6 +1,6 @@
 // integration.test.mjs — offline integration test for promote_approval v2 (issue #35)
-// Compiles the Deno Edge Function with esbuild, mocks Deno + fetch, and drives
-// GET (302 redirect to external UI) / POST (execute + 302 redirect to result UI).
+// Loads the Deno Edge Function via Node 22 native TypeScript stripping (zero extra deps),
+// mocks Deno + fetch, and drives GET (302 redirect to external UI) / POST (execute + 302 redirect to result UI).
 //
 // Run: node integration.test.mjs
 //
@@ -9,30 +9,12 @@
 // 它**不覆盖 Supabase 网关的 Content-Type rewrite 等平台行为**（例如默认域名禁止
 // 返回 HTML —— #35 根因）。涉及 UI/HTML 的函数，部署后必须走
 // docs/deploy_verification_checklist_v1.0.md §3.3 的 agent-browser 真实浏览器验证。
-import { createRequire } from 'module';
-import { tmpdir } from 'os';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { signToken } from './approval_token.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-let esbuild;
-try {
-  esbuild = createRequire(import.meta.url)('esbuild');
-} catch (_) {
-  try {
-    esbuild = createRequire(process.env.ESBUILD_REQUIRE_BASE || 'C:/Users/Eric Zhang/.workbuddy/binaries/node/workspace/package.json')('esbuild');
-  } catch (e) {
-    console.error('SKIP — esbuild not found. Install esbuild (npm i esbuild) or set ESBUILD_REQUIRE_BASE.');
-    process.exit(0);
-  }
-}
-
-const SRC = join(__dirname, 'index.ts');
-const OUT = join(tmpdir(), 'promote_approval_bundle.mjs');
-esbuild.buildSync({ entryPoints: [SRC], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', outfile: OUT });
-
-// ---- mock Deno ----
+// ---- mock Deno（先设 mock，再 import 源码，serve 回调即 handler）----
 const SECRET = 'integration-secret-0123456789abcdef';
 const UI_URL = 'https://example.com/approval.html';
 const ENV = {
@@ -85,7 +67,7 @@ globalThis.fetch = async (url, opts = {}) => {
   return new Response('not-mocked ' + u, { status: 500 });
 };
 
-await import('file://' + OUT.replace(/\\/g, '/'));
+await import(pathToFileURL(join(__dirname, 'index.ts')).href);
 if (!handler) { console.error('FAIL — handler not captured'); process.exit(1); }
 
 // ---- helpers ----

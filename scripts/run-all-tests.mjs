@@ -13,6 +13,7 @@
 // 设计约束（贡献指南 7.1 / 7.8）：
 //   - 零额外依赖：Node 原生 fs/child_process，不引入 Jest/Mocha
 //   - 兼容项目现存 4 种输出风格：'  PASS label' / 'PASS — desc' / 'PASS name' / 'N/N PASS'
+//   - 套件声明 SKIP（依赖缺失等）必须显式标红，禁止「没跑 = 通过」（2026-11-27 CI 告警教训）
 //   - 退出码反映真实结果：任一套件非零退出或存在 FAIL 用例 → exit 1
 //   - 用例耗时按套件耗时均摊（JUnit 需 time 字段），JSON 中标注为估算值
 
@@ -131,6 +132,11 @@ function main() {
     // 套件异常退出但没有解析到 FAIL 行时，补一条失败用例，避免 JUnit 漏报
     if (r.status !== 0 && !cases.some((c) => c.status === 'failed')) {
       cases.push({ name: `[套件异常] 进程退出码=${r.status} signal=${r.signal || 'none'}`, status: 'failed' });
+    }
+    // 套件声明 SKIP（如 esbuild 缺失）即使 exit 0 也必须标红，禁止静默跳过被当成通过
+    const skipNote = output.match(/SKIP\s+[—-]\s*([^\r\n]+)/);
+    if (skipNote) {
+      cases.push({ name: `[套件跳过] ${skipNote[1].trim()}`, status: 'failed' });
     }
     // 套件正常退出但一行 PASS/FAIL 都没解析到时，提示解析口径可能漂移
     if (r.status === 0 && cases.length === 0) {

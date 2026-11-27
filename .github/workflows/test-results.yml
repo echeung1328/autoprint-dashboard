@@ -34,7 +34,8 @@ jobs:
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 22.18+ 原生剥离 TypeScript 类型，集成测试直接 import index.ts（零额外依赖）
+          node-version: '22'
 
       - name: 运行统一测试入口（9 套件 / 311 项）
         run: node scripts/run-all-tests.mjs

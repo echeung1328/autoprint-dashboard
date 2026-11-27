@@ -1,41 +1,13 @@
 // integration.test.mjs — offline integration test for index.ts v11 (issue #34)
-// Compiles the Deno Edge Function with esbuild, mocks Deno + fetch, and drives
-// the handler with realistic Webhook Relay payloads.
+// Loads the Deno Edge Function via Node 22 native TypeScript stripping (zero extra deps),
+// mocks Deno + fetch, and drives the handler with realistic Webhook Relay payloads.
 //
-// Run: node integration.test.mjs   (requires esbuild resolvable via NODE_PATH
-// or an adjacent node_modules; falls back with a clear message otherwise)
-import { createRequire } from 'module';
-import { tmpdir } from 'os';
+// Run: node integration.test.mjs
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-let esbuild;
-try {
-  esbuild = createRequire(import.meta.url)('esbuild');
-} catch (_) {
-  try {
-    // WorkBuddy managed-node workspace fallback (local dev machine)
-    esbuild = createRequire(process.env.ESBUILD_REQUIRE_BASE || 'C:/Users/Eric Zhang/.workbuddy/binaries/node/workspace/package.json')('esbuild');
-  } catch (e) {
-    console.error('SKIP — esbuild not found. Install esbuild (npm i esbuild) or set ESBUILD_REQUIRE_BASE.');
-    process.exit(0);
-  }
-}
-
-const SRC = join(__dirname, 'index.ts');
-const OUT = join(tmpdir(), 'email_inbox_bundle.mjs');
-
-esbuild.buildSync({
-  entryPoints: [SRC],
-  bundle: true,
-  format: 'esm',
-  platform: 'neutral',
-  target: 'es2022',
-  outfile: OUT
-});
-
-// ---- mock Deno ----
+// ---- mock Deno（先设 mock，再 import 源码，serve 回调即 handler）----
 const ENV = {
   SUPABASE_URL: 'https://test.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'sr_test',
@@ -102,7 +74,7 @@ globalThis.fetch = async (url, opts = {}) => {
   return new Response('not-mocked ' + u, { status: 500 });
 };
 
-await import('file://' + OUT.replace(/\\/g, '/'));
+await import(pathToFileURL(join(__dirname, 'index.ts')).href);
 if (!handler) {
   console.error('FAIL — Deno.serve handler not captured');
   process.exit(1);

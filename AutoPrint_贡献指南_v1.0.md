@@ -1,6 +1,6 @@
-# AutoPrint 系统 - 贡献指南 v1.2
+# AutoPrint 系统 - 贡献指南 v1.3
 
-**文档版本**: V1.2  
+**文档版本**: V1.3  
 **创建日期**: 2026-06-30  
 **最后更新**: 2026-11-27  
 **作者**: 高级开发工程师  
@@ -15,6 +15,7 @@
 | V1.0 | 2026-06-30 | 初始版本 | 高级开发工程师 |
 | V1.1 | 2026-11-25 | 第 7 节「测试规范」迭代：对齐项目实际 node 测试体系；新增测试记录透明性要求（关键用例依据+截图索引）、人工测试标注、GitHub 测试记录方式 | 高级开发工程师 |
 | V1.2 | 2026-11-27 | 第 7.6/7.8 节：统一测试入口 `scripts/run-all-tests.mjs`（9 套件 / 311 项）+ JUnit XML + GitHub Actions Checks 报告（issue #66）；纠正历史用例数口径（107/155/156 → 311） | 高级开发工程师 |
+| V1.3 | 2026-11-27 | 修复 CI 告警（run 45969404972）：集成测试改为 Node 22 原生 TypeScript 剥离加载 `index.ts`，移除本机硬编码 esbuild 路径依赖；CI Node 20→22；统一入口对 `SKIP` 显式标红 | 高级开发工程师 |
 
 ---
 
@@ -438,13 +439,13 @@ Relates to #456
 
 ### 7.1 测试层级（项目实际体系）
 
-本项目为静态前端 + Deno Edge Function，测试以 Node 原生 `.test.mjs` 为主，**不引入 Jest/Playwright**（无构建链、避免额外依赖）。
+本项目为静态前端 + Deno Edge Function，测试以 Node 原生 `.test.mjs` 为主，**不引入 Jest/Playwright**（无构建链、避免额外依赖）。**运行环境要求 Node 22.18+**：原生剥离 TypeScript 类型，集成测试可直接 `import index.ts`，无需 esbuild 等额外依赖。
 
 | 层级 | 实际工具 | 覆盖范围 | 位置示例 |
 |------|----------|----------|----------|
 | 单元测试 | `node *.test.mjs`（Node 内置断言风格） | 工具函数、解析逻辑、模式判断 | `approval_mode.test.mjs`、`body_parser.test.mjs`、`row_filter.test.mjs` |
-| 集成测试 | `node *.test.mjs` + esbuild 编译 + mock `fetch`/`Deno` | Edge Function 端到端逻辑（不发真实网络请求） | `email_inbox_poc/integration.test.mjs`、`promote_approval/integration.test.mjs` |
-| 静态检查 | `node --check`、esbuild 编译 | 语法正确性、可编译性 | 发布前必跑 |
+| 集成测试 | `node *.test.mjs` + Node 22 原生 TS 剥离 + mock `fetch`/`Deno` | Edge Function 端到端逻辑（不发真实网络请求） | `access_links/integration.test.mjs`、`email_inbox_poc/integration.test.mjs`、`promote_approval/integration.test.mjs` |
+| 静态检查 | `node --check`、原生 `import index.ts` 语法加载 | 语法正确性、可加载性 | 发布前必跑 |
 | 线上端到端 | 人工实操 + 数据库交叉核实 | 真实邮件链路、审批转正/阻断、看板渲染 | GitHub Issue 验证报告（见 7.6） |
 
 ### 7.2 编写/运行测试用例
@@ -521,7 +522,7 @@ process.exit(failed === 0 ? 0 : 1);
 | 单一可追溯来源 | 仓库 `docs/` 测试记录文档 | 7.3 四板块，逐用例可标注、可版本化 |
 | 团队回顾入口 | 功能 Issue 的**结构化验证报告评论** | 标题 + 分路径小节 + 证据表 + 截图；每条路径对应测试用例，可 `@` 负责人讨论 |
 | 细粒度追踪 | 测试记录文档的依据表 + Issue 评论 | 单个用例的补测/转人工在「依据/备注」列标注 `⚠️ 需人工补测`，并在 Issue 留评论留痕 |
-| 自动化结果可视化（✅ v1.2 已启用，issue #66） | 统一入口 + GitHub Actions + JUnit | `node scripts/run-all-tests.mjs` 一键跑全部套件并产出 `test-results/junit.xml` + `summary.json`；`.github/workflows/test-results.yml` 用 `dorny/test-reporter` 在 Checks/PR 逐用例显示。当前 **9 套件 / 311 项全绿**（此前 156 项口径只算了 access_links 3 套件，已纠正） |
+| 自动化结果可视化（✅ v1.2 已启用 / v1.3 修复 CI，issue #66） | 统一入口 + GitHub Actions + JUnit | `node scripts/run-all-tests.mjs` 一键跑全部套件并产出 `test-results/junit.xml` + `summary.json`；`.github/workflows/test-results.yml` 用 `dorny/test-reporter` 在 Checks/PR 逐用例显示。当前 **9 套件 / 311 项全绿**（此前 156 项口径只算了 access_links 3 套件，已纠正）。CI 固定 Node 22，套件输出 `SKIP` 一律标红，杜绝「依赖缺失 = 静默跳过」 |
 
 ### 7.7 手动测试检查清单（基线）
 
@@ -542,7 +543,9 @@ process.exit(failed === 0 ? 0 : 1);
 - [ ] 图表渲染时间 < 1 秒
 - [ ] 无明显卡顿
 
-### 7.8 统一测试入口（v1.2 / issue #66，已交付）
+### 7.8 统一测试入口（v1.3 / issue #66，已交付）
+
+**前置条件**：Node 22.18+（原生 TypeScript 剥离）。本地用 `node --version` 确认；CI 已由 workflow 固定为 `22`。
 
 ```bash
 # 一键运行全部 9 个测试套件（约 1.3 秒），产出结构化结果
@@ -558,6 +561,7 @@ node scripts/run-all-tests.mjs --no-write
 - 用例数口径：**9 套件 / 311 项**（access_links 156 + email_inbox_poc 107 + promote_approval 48）。历史文档中的 107/155/156 均为部分套件口径，以统一入口输出为准。
 - CI：`.github/workflows/test-results.yml` 在 PR 与 develop/master 推送时运行，`checks: write` 最小权限，失败用例在 Checks 内联标注；Job Summary 显示套件/用例/通过/失败汇总。
 - 兼容现存 4 种输出风格（`PASS label` / `PASS — desc` / `PASS name` / `N/N PASS`），新增套件沿用 `check()` 风格即可自动纳入。
+- 防静默跳过：套件输出 `SKIP — ...`（如依赖缺失）即使进程 `exit 0` 也被记为失败用例，避免 CI 出现「没跑但全绿」。此规则源于 2026-11-27 的 Actions 告警（本地有 esbuild、CI 无依赖，3 个集成套件被静默跳过）。
 
 ### 7.9 改进路线（后续迭代）
 
